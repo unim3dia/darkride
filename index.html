@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DARKRIDE</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230a0c0e'/%3E%3Ccircle cx='11' cy='16' r='3.4' fill='%23e8f2f6'/%3E%3Ccircle cx='21' cy='16' r='3.4' fill='%23e8f2f6'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Syncopate:wght@400;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/src/ui/style.css" />
+  </head>
+  <body>
+    <main id="stage" aria-label="Darkride"></main>
+
+    <section id="title" class="overlay" aria-labelledby="title-heading">
+      <div class="title-inner">
+        <header>
+          <p class="kicker">a night drive</p>
+          <h1 id="title-heading">DARK<span>RIDE</span></h1>
+        </header>
+        <footer>
+          <p class="tagline">your headlights are dead.<br />the hydraulics still work.</p>
+          <p class="start">press any key</p>
+        </footer>
+      </div>
+    </section>
+
+    <section id="zone" class="overlay zone" aria-live="polite">
+      <h2 id="zone-name"></h2>
+      <p id="zone-sub"></p>
+    </section>
+
+    <aside id="hint" class="hint">
+      <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</p>
+      <p><kbd>SPACE</kbd> tap: pop the front &nbsp;·&nbsp; hold: jump</p>
+      <p><kbd>S</kbd>/<kbd>A</kbd>/<kbd>D</kbd> + tap: pop the back or a side</p>
+      <p><kbd>SHIFT</kbd> lift the nose &nbsp; <kbd>Q</kbd><kbd>E</kbd> three-wheel</p>
+      <p>follow the marks in the street to the bridge</p>
+      <p>every landing lights the dark</p>
+      <p>find the ones watching. land close while they look back.</p>
+      <p class="dim"><kbd>C</kbd> camera &nbsp; <kbd>M</kbd> mute &nbsp; <kbd>F</kbd> fullscreen</p>
+    </aside>
+
+    <button id="fullscreen" class="fs-btn" type="button" aria-label="Enter fullscreen" aria-pressed="false">
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+        <path class="fs-in" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+        <path class="fs-out" d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
+      </svg>
+    </button>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

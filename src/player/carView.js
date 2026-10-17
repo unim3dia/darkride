@@ -1,0 +1,132 @@
+// Dresses the physics body: suspension, wheels, rams, headlights, the dash,
+// and the passengers you've picked up, riding in the back seat as two lights each.
+import * as THREE from 'three';
+import { buildPlayerCar, buildRider, WHEEL_RADIUS } from './carModel.js';
+import { buildBeam, buildTailGlow, buildWipers } from './carLights.js';
+
+const UP = new THREE.Vector3(0, 1, 0);
+
+const SEATS = [
+  [0.45, 1.22, 0.28],    // shotgun
+  [-0.55, 1.2, 1.3],     // back left
+  [0.0, 1.2, 1.33],      // back middle
+  [0.55, 1.2, 1.3],      // back right
+];
+
+export class CarView {
+  constructor(scene, gaugeTexture) {
+    this.model = buildPlayerCar();
+    this.model.root.rotation.order = 'YXZ';
+    this.model.headlights[0].material = this.model.headlights[0].material.clone();
+    scene.add(this.model.root);
+
+    // one weak, tired headlight beam; the left bulb is going
+    this.beam = new THREE.SpotLight(0xffd9a0, 22, 42, 0.42, 0.7, 1.5);
+    this.beam.position.set(0, 0.78, -2.9);
+    this.beam.target.position.set(0, -0.6, -16);
+    this.model.body.add(this.beam, this.beam.target);
+
+    // beams you can see in the rain, one per side; the left one is failing
+    this.beams = [-0.86, 0.86].map((x) => {
+      const b = buildBeam();
+      b.position.set(x, 0.74, -2.95);
+      this.model.body.add(b);
+      return b;
+    });
+    this.tailGlow = buildTailGlow();
+    this.model.root.add(this.tailGlow);
+    this.wipers = buildWipers();
+    this.model.body.add(this.wipers.group);
+    this.wipePhase = 0;
+    this.lastWipe = 0;
+
+    // gauge glow on the driver's face (the green from the reference)
+    this.dashLight = new THREE.PointLight(0x3dff8f, 0.6, 1.6, 2);
+    this.dashLight.position.set(-0.45, 1.05, -0.55);
+    this.model.body.add(this.dashLight);
+
+    const dash = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.56, 0.19),
+      new THREE.MeshBasicMaterial({ map: gaugeTexture, transparent: true, color: new THREE.Color(1.5, 1.5, 1.5), depthWrite: false })
+    );
+    dash.position.set(-0.42, 1.07, -0.7);
+    dash.rotation.x = -0.75;
+    this.model.body.add(dash);
+
+    this.passengers = SEATS.map(([x, y, z]) => {
+      const { group: g, eyes } = buildRider(0.95);
+      g.position.set(x, y, z);
+      g.visible = false;
+      g.userData = { eyes, look: Math.random() * 6 };
+      this.model.body.add(g);
+      return g;
+    });
+  }
+
+  /** 0 right after a wipe, rising toward 1 as rain builds back up. */
+  glassWetness(time) {
+    return Math.min(1, (time - this.lastWipe) / 2.4);
+  }
+
+  setPassengers(n) {
+    this.passengers.forEach((p, i) => { p.visible = i < n; });
+  }
+
+  sync(v, time, dt) {
+    const m = this.model;
+    m.root.position.copy(v.pos);
+    m.root.rotation.set(v.airPitch, -v.yaw, v.airRoll);
+    m.body.position.y = v.bodyY + v.liftY;
+    m.body.rotation.set(v.pitch + v.liftPitch, 0, v.roll + v.liftRoll);
+
+    // wheels hang as the body flies (lowrider rams fully extended)
+    const droop = v.airborne ? Math.min(0.35, v.airTime * 1.2) : 0;
+    m.wheels.forEach((w, i) => {
+      // a popped corner tops out its ram and pulls the tire off the ground
+      w.position.y = WHEEL_RADIUS - droop * 0.4 + v.wheelLift(i);
+      w.rotation.x = -v.wheelSpin;
+      if (i < 2) w.rotation.y = -v.steer * 0.45;
+      const ram = m.rams[i];
+      const top = 0.5 + v.bodyY + v.corners[i].y + (i < 2 ? -1 : 1) * v.pitch * 1.8;
+      const bottom = w.position.y;
+      ram.position.y = (top + bottom) / 2;
+      ram.scale.y = Math.max(0.05, top - bottom);
+    });
+
+    // the wheel turns with the steering; the hand rides it, the forearm follows
+    const st = m.steering;
+    st.spin.rotation.z = v.steer * 1.9;
+    st.wrist.getWorldPosition(this._wrist || (this._wrist = new THREE.Vector3()));
+    m.body.worldToLocal(this._wrist);
+    const dir = this._wrist.clone().sub(st.elbow);
+    st.forearm.position.copy(st.elbow).addScaledVector(dir, 0.5);
+    st.forearm.scale.set(1, dir.length(), 1);
+    st.forearm.quaternion.setFromUnitVectors(UP, dir.normalize());
+
+    // the driver glances toward the turn, and at the sky when you fly
+    const d = m.driver;
+    d.rotation.y += ((-v.steer * 0.35) - d.rotation.y) * Math.min(1, dt * 4);
+    d.rotation.x += ((v.airborne ? 0.12 : 0) - d.rotation.x) * Math.min(1, dt * 3);
+
+    const flick = Math.sin(time * 31) > 0.6 && Math.sin(time * 2.3) > 0.2 ? 0.25 : 1;
+    m.headlights[0].material.color.setRGB(1.6 * flick, 1.35 * flick, 0.95 * flick);
+    this.beam.intensity = 22 * (0.78 + 0.22 * flick);
+    this.beams[0].material.uniforms.uStrength.value = 0.16 * flick;
+    this.beams[1].material.uniforms.uStrength.value = 0.16;
+    this.tailGlow.material.opacity = 0.12 * THREE.MathUtils.clamp(1 - Math.abs(v.pos.y - v.groundY) / 2.5, 0, 1);
+
+    // wipers: a sweep every few seconds; returns how clear the glass is (0 = just wiped)
+    // wipers only run when it's actually raining; they park otherwise
+    if (this.raining || this.wipePhase < 1) this.wipePhase += dt / 1.1;
+    if (this.wipePhase > 2.6) { this.wipePhase = 0; this.lastWipe = time; }
+    const sweep = this.wipePhase < 1 ? Math.sin(this.wipePhase * Math.PI) : 0;
+    for (const b of this.wipers.blades) b.rotation.z = Math.PI / 2 - 0.08 - sweep * 1.75;
+
+    for (const p of this.passengers) {
+      if (!p.visible) continue;
+      p.rotation.y = Math.sin(time * 0.3 + p.userData.look) * 0.5;
+      const blink = Math.sin(time * 0.9 + p.userData.look * 9) > 0.98 ? 0.05 : 1;
+      p.userData.eyes.forEach((e) => { e.scale.y = blink; });
+    }
+  }
+}
