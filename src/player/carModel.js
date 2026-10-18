@@ -224,11 +224,21 @@ function steeringWheelGeo() {
  */
 function handGeo() {
   const parts = [];
-  // one soft lump over the rim, one wrapping under it, a smudge of thumb, the cuff
-  parts.push(new THREE.SphereGeometry(0.058, 12, 9).scale(1.2, 0.75, 0.95).translate(0.01, -RIM_R - 0.006, 0.026));
-  parts.push(new THREE.SphereGeometry(0.046, 10, 8).scale(1.25, 0.8, 0.85).translate(0.008, -RIM_R - 0.028, -0.016));
-  parts.push(new THREE.SphereGeometry(0.022, 8, 6).scale(1.8, 0.9, 0.9).translate(0.055, -RIM_R + 0.012, 0.014));
-  parts.push(new THREE.CylinderGeometry(0.036, 0.042, 0.09, 10).rotateX(Math.PI / 2 - 0.3).translate(0.018, -RIM_R - 0.022, 0.09));
+  // back of the hand lying over the rim, knuckles forward
+  parts.push(new THREE.SphereGeometry(0.05, 14, 10).scale(1.25, 0.62, 1.0).translate(0.012, -RIM_R + 0.004, 0.03));
+  // four fingers curled loosely round the rim: soft capsules, each a little shorter outward
+  for (let k = 0; k < 4; k++) {
+    const len = 0.05 - k * 0.006;
+    const f = new THREE.CapsuleGeometry(0.0105, len, 4, 8);
+    f.rotateX(Math.PI / 2 - 0.25).translate(-0.022 + k * 0.016, -RIM_R - 0.016, -0.004);
+    parts.push(f);
+    parts.push(new THREE.SphereGeometry(0.011, 8, 6).translate(-0.022 + k * 0.016, -RIM_R - 0.03, -0.028)); // fingertips tucked under
+  }
+  // thumb resting along the top of the rim, relaxed
+  parts.push(new THREE.CapsuleGeometry(0.011, 0.04, 4, 8).rotateZ(Math.PI / 2 - 0.45).translate(0.054, -RIM_R + 0.016, 0.016));
+  // heel of the palm and the wrist, narrowing into the cuff
+  parts.push(new THREE.SphereGeometry(0.036, 10, 8).scale(1.1, 0.9, 1.1).translate(0.016, -RIM_R - 0.02, 0.07));
+  parts.push(new THREE.CylinderGeometry(0.034, 0.03, 0.06, 12).rotateX(Math.PI / 2 - 0.3).translate(0.018, -RIM_R - 0.024, 0.105));
   return merge(parts);
 }
 
@@ -276,9 +286,17 @@ export function buildSteering(mat) {
   const wrist = new THREE.Object3D();
   wrist.position.set(0.02, -RIM_R - 0.02, 0.12);
   grip.add(wrist);
-  // forearm: a sleeve from the wrist down to an elbow resting by the seat
-  const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.038, 1, 12), mat);
-  return { pivot, spin, hand, wrist, forearm, elbow: new THREE.Vector3(-0.2, 0.6, 0.02) };
+  // the arm: shoulder → elbow → wrist, solved each frame so the elbow hangs naturally
+  const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.046, 0.034, 1, 14), mat);
+  const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.052, 1, 14), mat);
+  const elbowJoint = new THREE.Mesh(new THREE.SphereGeometry(0.052, 12, 10), mat);
+  const shoulderJoint = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 10).scale(1.1, 0.9, 1), mat);
+  return {
+    pivot, spin, hand, wrist, forearm, upper, elbowJoint, shoulderJoint,
+    shoulder: new THREE.Vector3(-0.22, 0.96, 0.24), // the driver's right shoulder, in body space
+    upperLen: 0.4, foreLen: 0.42,
+    pole: new THREE.Vector3(1, -0.45, 0.1).normalize(), // a lazy elbow, dropped and out toward the door side of the bench
+  };
 }
 
 // ---------------------------------------------------------------- wire wheels
@@ -442,7 +460,7 @@ export function buildPlayerCar() {
   });
 
   const steering = buildSteering(shadowMat());
-  body.add(steering.pivot, steering.forearm);
+  body.add(steering.pivot, steering.forearm, steering.upper, steering.elbowJoint, steering.shoulderJoint);
 
   return { root, body, wheels, rams, driver: rider.group, eyes: rider.eyes, headlights, steering };
 }

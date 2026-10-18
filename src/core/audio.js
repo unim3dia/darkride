@@ -275,7 +275,7 @@ export class Audio {
       this.burst('bandpass', 700, 0.08 * train, 0.05, 3, 0.3);
       this.nextClack = t + (this.clackBeat++ % 2 ? 0.42 : 0.14);
     }
-    this.radio.gain.setTargetAtTime(view === 'cabin' ? 0.05 : 0.012, t, 0.4);
+    this.radio.gain.setTargetAtTime(this.noMusic ? 0 : view === 'cabin' ? 0.05 : 0.012, t, 0.4);
     if (t > this.nextChord) { this.radioChord(); this.nextChord = t + 4; }
     const roll = airborne ? 0 : Math.min(1, speed / 30);
     this.tires.gain.setTargetAtTime(roll * 0.13, t, airborne ? 0.02 : 0.08);
@@ -471,8 +471,8 @@ export class Audio {
     if (!this.ctx) return;
     if (!this.voices) this.buildChoir();
     const t = this.ctx.currentTime;
-    this.choirBus.gain.setTargetAtTime(weight * 0.05, t, 0.8);
-    if (t > 9) this.droneGain.gain.setTargetAtTime(0.06 * (1 - weight * 0.85), t, 1.0);
+    this.choirBus.gain.setTargetAtTime(this.noMusic ? 0 : weight * 0.05, t, 0.8);
+    if (t > 9 && !this.noMusic) this.droneGain.gain.setTargetAtTime(0.06 * (1 - weight * 0.85), t, 1.0);
     this.windBoost = def && def.wind ? def.wind * weight : 0;
     if (!def || weight < 0.01) return;
     const FORMANTS = { ah: [800, 1150, 2900], oo: [325, 700, 2530], oh: [450, 800, 2830], ee: [270, 2140, 2950] };
@@ -495,7 +495,7 @@ export class Audio {
       } else v.vg.gain.setTargetAtTime(0, t, 1.2);
     });
     this.nextChoir = t + def.dur;
-    if (def.bells) this.bell(def.root * chord[Math.floor(Math.random() * chord.length)] * 2, weight);
+    if (def.bells && !this.noMusic) this.bell(def.root * chord[Math.floor(Math.random() * chord.length)] * 2, weight);
   }
 
   /** A struck bowl: inharmonic partials, a long ring into the reverb. */
@@ -503,6 +503,17 @@ export class Audio {
     [[1, 1], [2.76, 0.45], [5.4, 0.22], [8.93, 0.1]].forEach(([p, a], i) => {
       this.tone(f * p, 0.05 * a * level, 5 - i, { attack: 0.003, wet: 1, delay: Math.random() * 0.02 });
     });
+  }
+
+  /** For recording: cut every musical voice (drone, choir, bells, radio); keep the world's sounds. */
+  silenceMusic(on = true) {
+    this.noMusic = on;
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.droneGain.gain.cancelScheduledValues(t);
+    this.droneGain.gain.setValueAtTime(on ? 0 : 0.06, t);
+    this.radio.gain.setValueAtTime(0, t);
+    if (this.choirBus) this.choirBus.gain.setValueAtTime(0, t);
   }
 
   toggleMute() {

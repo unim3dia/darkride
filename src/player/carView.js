@@ -6,6 +6,25 @@ import { buildBeam, buildTailGlow, buildWipers } from './carLights.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 
+/** Two-bone IK: where the elbow goes so both segments keep their length, bending toward `pole`. */
+function solveElbow(S, W, a, b, pole) {
+  const d = W.clone().sub(S);
+  const len = Math.min(d.length(), a + b - 1e-4);
+  const dir = d.normalize();
+  const x = (a * a - b * b + len * len) / (2 * len);    // distance along S→W to the elbow's foot
+  const h = Math.sqrt(Math.max(0, a * a - x * x));      // how far the elbow sits off that line
+  const side = pole.clone().addScaledVector(dir, -pole.dot(dir)).normalize();
+  return S.clone().addScaledVector(dir, x).addScaledVector(side, h);
+}
+
+/** Stretch a unit-tall cylinder between two points. */
+function limb(mesh, A, B) {
+  const v = B.clone().sub(A);
+  mesh.position.copy(A).addScaledVector(v, 0.5);
+  mesh.scale.set(1, v.length(), 1);
+  mesh.quaternion.setFromUnitVectors(UP, v.normalize());
+}
+
 const SEATS = [
   [0.45, 1.22, 0.28],    // shotgun
   [-0.55, 1.2, 1.3],     // back left
@@ -98,10 +117,11 @@ export class CarView {
     st.spin.rotation.z = v.steer * 1.9;
     st.wrist.getWorldPosition(this._wrist || (this._wrist = new THREE.Vector3()));
     m.body.worldToLocal(this._wrist);
-    const dir = this._wrist.clone().sub(st.elbow);
-    st.forearm.position.copy(st.elbow).addScaledVector(dir, 0.5);
-    st.forearm.scale.set(1, dir.length(), 1);
-    st.forearm.quaternion.setFromUnitVectors(UP, dir.normalize());
+    const elbow = solveElbow(st.shoulder, this._wrist, st.upperLen, st.foreLen, st.pole);
+    limb(st.upper, st.shoulder, elbow);
+    limb(st.forearm, elbow, this._wrist);
+    st.elbowJoint.position.copy(elbow);
+    st.shoulderJoint.position.copy(st.shoulder);
 
     // the driver glances toward the turn, and at the sky when you fly
     const d = m.driver;

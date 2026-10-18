@@ -452,6 +452,7 @@ function tick(now) {
 }
 
 // expose a tiny handle for debugging in the console
-window.__darkride = { vehicle, state, chunks, rig, ROAD, particles, watchers, carView, scene, renderer, district, narrows, places, answerers, emitPulse, ambient, forks };
+window.__darkride = { vehicle, state, chunks, rig, ROAD, particles, watchers, carView, scene, renderer, district, narrows, places, answerers, emitPulse, ambient, forks, audio, warmStart };
 if (TEST) import('./core/testkit.js').then((m) => m.installTestKit(window.__darkride));
+if (new URLSearchParams(location.search).has('reel')) import('./core/reel.js').then((m) => m.installReel(window.__darkride));
 schedule(tick);

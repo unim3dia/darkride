@@ -38,6 +38,13 @@ export class CameraRig {
   }
 
   update(dt, v, model) {
+    // a scripted shot (used for trailers): someone else is holding the camera
+    if (this.cine) {
+      model.driver.visible = true;
+      this.cine(this.camera, v, dt);
+      this.camera.updateProjectionMatrix();
+      return;
+    }
     this.t += dt;
     const f = v.forward.clone();
     const r = new THREE.Vector3(-f.z, 0, f.x);
@@ -49,7 +56,8 @@ export class CameraRig {
 
     if (this.name === 'cabin') {
       model.driver.getWorldPosition(tmp);
-      desired = tmp.clone().addScaledVector(f, -0.05).add(new THREE.Vector3(0, 0.12, 0));
+      // sat back in the bench, a touch to the left: enough room to see the whole arm, elbow and all
+      desired = tmp.clone().addScaledVector(f, -0.42).addScaledVector(r, -0.12).add(new THREE.Vector3(0, 0.1, 0));
       look.copy(desired).addScaledVector(f, 20).y += -1.2 + v.airPitch * -8;
       fov = 72 + speed * 0.15;
       stiffness = 60;
