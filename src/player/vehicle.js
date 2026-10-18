@@ -3,7 +3,7 @@
 // landing that always reads clearly (big slam = big pulse).
 import * as THREE from 'three';
 import { CAR, ROAD } from '../config.js';
-import { project, sample, elevation, gapAt, hasBarrier, LOOP_LEN } from '../world/track.js';
+import { project, sample, elevation, gapAt, hasBarrier, forkOpen, LOOP_LEN } from '../world/track.js';
 import { shove } from '../world/bodies.js';
 
 const HW = ROAD.HALF_WIDTH;
@@ -12,6 +12,7 @@ const BARRIER_H = 0.95;
 const F = new THREE.Vector3();
 const R = new THREE.Vector3();
 const S = {};
+const CREST_LIFT = 21; // m/s²: lighter than a fall, so good crests give a moment of float
 
 const approach = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));
 
@@ -47,6 +48,10 @@ export class Vehicle {
     this.chargeTime = 0;
     // the street: set by the game to answer "is there ground under (x, z)?"
     this.street = { contains: () => false };
+    this.spurs = [];       // off-ramps (set by the game)
+    this.spurHit = null;
+    this.prevGround = NaN;
+    this.prevGV = 0;
   }
 
   /** Put the car anywhere (in the district, say), facing yaw. */
@@ -107,11 +112,33 @@ export class Vehicle {
 
     this.pos.addScaledVector(this.vel, dt);
 
-    // ---- ground: the deck when you're on it, the street when you're down in the district
+    // ---- ground: the deck when you're on it, the street when you're down in the district,
+    // or an off-ramp out across one of the pocket worlds
     const street = this.street.contains(this.pos.x, this.pos.z) ? 0 : -Infinity;
     const deck = onRoadPlan && this.pos.y > deckY - 2.5 ? deckY : -Infinity;
-    const ground = Math.max(street, deck);
+    let spurHit = null;
+    for (const sp of this.spurs) {
+      const h = sp.query(this.pos.x, this.pos.z);
+      if (h && Math.abs(h.d) < HW + 0.8 && this.pos.y > h.y - 2.5 && (!spurHit || h.y > spurHit.y)) spurHit = h;
+    }
+    const ramp = spurHit ? spurHit.y : -Infinity;
+    const ground = Math.max(street, deck, ramp);
+    this.spurHit = spurHit;
+    // out on a ramp, the loop position follows the ramp so the world streams around you
+    if (spurHit && !onRoadPlan) this.s = spurHit.spur.ringS(spurHit.t);
     this.groundY = Number.isFinite(ground) ? ground : deckY;
+    // cresting a hill fast: if the road drops away faster than a light float, the car leaves it
+    if (!this.airborne && Number.isFinite(ground) && Number.isFinite(this.prevGround)) {
+      const gv = (ground - this.prevGround) / dt;
+      if (Math.abs(gv) < 25 && this.prevGV - gv > CREST_LIFT * dt && this.prevGV > -3 && this.speed > 18) {
+        this.airborne = true;
+        this.airTime = 0;
+        this.vel.y = this.prevGV;
+        this.pos.y = this.prevGround + this.prevGV * dt;
+      }
+      this.prevGV = Math.abs(gv) < 25 ? gv : 0;
+    }
+    this.prevGround = this.airborne ? NaN : ground;
     if (this.pos.y <= ground) {
       if (this.airborne) this.land(ev, f);
       this.pos.y = ground;
@@ -124,7 +151,7 @@ export class Vehicle {
     }
 
     // ---- jersey barriers: low walls in town (hop them), tall invisible fences over the void
-    if (p.ok && !gap && hasBarrier(p.s) && this.pos.y > deckY - 1.5) {
+    if (p.ok && !gap && hasBarrier(p.s) && !forkOpen(p.s, Math.sign(p.d)) && this.pos.y > deckY - 1.5) {
       const overVoid = !this.street.contains(this.pos.x, this.pos.z, 25);
       const wallTop = deckY + (overVoid ? 9 : BARRIER_H + 0.2);
       const lim = HW - CAR_HALF_W;
@@ -146,8 +173,26 @@ export class Vehicle {
         }
       }
     }
-    this.onRoad = onRoadPlan && this.pos.y > deckY - 1.5;
-    this.offDeck = !Number.isFinite(ground) && this.pos.y < deckY - 6;
+    // ---- off-ramp walls: invisible-tall over the void, from where it leaves the highway to where it rejoins
+    if (spurHit && spurHit.spur.walled(spurHit.t)) {
+      const lim = HW - CAR_HALF_W;
+      const d = spurHit.d;
+      if (Math.abs(d) > lim && this.pos.y < spurHit.y + 9) {
+        const side = Math.sign(d);
+        const push = Math.abs(d) - lim;
+        this.pos.x -= spurHit.nx * side * push;
+        this.pos.z -= spurHit.nz * side * push;
+        const into = this.vel.x * spurHit.nx * side + this.vel.z * spurHit.nz * side;
+        if (into > 0) {
+          this.vel.x -= spurHit.nx * side * into * 1.35;
+          this.vel.z -= spurHit.nz * side * into * 1.35;
+          ev.scrape = Math.min(1, into / 8 + this.speed / 60);
+          this.vel.multiplyScalar(1 - Math.min(0.25, into * 0.02));
+        }
+      }
+    }
+    this.onRoad = (onRoadPlan && this.pos.y > deckY - 1.5) || !!spurHit;
+    this.offDeck = !Number.isFinite(ground) && this.pos.y < (spurHit ? spurHit.y : deckY) - 6;
 
     this.updateSprings(dt);
     this.settleAttitude(dt);
@@ -269,6 +314,7 @@ export class Vehicle {
     // the body takes the hit and rocks; leftover attitude settles over a beat, never snaps
     this.pitchV += THREE.MathUtils.clamp(this.airPitch, -0.3, 0.3) * 4;
     this.airPitchV *= 0.25;
+    if (impact < 2.5) return; // a soft touchdown off a hill crest: a bounce, not a slam
     ev.slam = {
       x: this.pos.x, y: this.groundY, z: this.pos.z,
       impact, clean, airTime: this.airTime,

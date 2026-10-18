@@ -9,7 +9,9 @@ import { FilmShader } from './filmShader.js';
 
 export function createRenderer(container) {
   const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+  // phones and tablets draw at 1x: the grain hides it, and the frame rate needs it
+  const coarse = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, coarse ? 1 : 1.5));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;

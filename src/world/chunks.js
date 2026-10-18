@@ -2,7 +2,7 @@
 // sodium lamps, swinging chains, eyes in the ruins, fires below, neon signs.
 import * as THREE from 'three';
 import { ROAD } from '../config.js';
-import { chunkFeatures, rng, sample, elevation, hasBarrier, CHUNK_LEN, N_CHUNKS } from './track.js';
+import { chunkFeatures, rng, sample, elevation, hasBarrier, barrierSpans, CHUNK_LEN, N_CHUNKS } from './track.js';
 import { MATS, SODIUM_MAT, merge, ruinTower, pineTree, lampPost, signTexture, box, disposeGroup } from './props.js';
 import { buildStaticCar } from '../player/carModel.js';
 import { ribbon, roadBox, roadPoint, roadHeading, trussGeometry, overpassGeometry } from './builders.js';
@@ -47,7 +47,9 @@ function buildRoad(f, a, b, r, bins) {
     // the deck sits a hair proud of the street so they never fight where the road comes down
     bins.asphalt.push(ribbon(x, y, -HW - 0.8, HW + 0.8, 0.04, -1.3));
     for (const side of [-1, 1]) {
-      if (barriers) bins.concrete.push(ribbon(x, y, side * (HW + 0.35) - 0.35, side * (HW + 0.35) + 0.35, 0.99, 0.04));
+      if (barriers) {
+        for (const [p, q] of barrierSpans(x, y, side)) bins.concrete.push(ribbon(p, q, side * (HW + 0.35) - 0.35, side * (HW + 0.35) + 0.35, 0.99, 0.04));
+      }
       bins.paint_line.push(ribbon(x, y, side * (HW - 0.5) - 0.08, side * (HW - 0.5) + 0.08, 0.055, 0.04));
     }
     for (let s = Math.ceil(x / 9) * 9; s + 3.2 < y; s += 9) {

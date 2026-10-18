@@ -19,6 +19,10 @@ A Three.js lowrider game: every hydraulic landing sends a pulse of light that dr
 | M | mute |
 | F | fullscreen |
 
+On a phone or iPad, touch controls appear automatically: a steering pad on the left, GAS / BRAKE / HOP on the right, CAM and LIFT up top.
+
+Watch for the exits on the ring road: they lead off into pocket worlds (the Dust, the Ether, the Sanctum, Ephemera) and merge back further on.
+
 ## Run locally
 
 ```bash

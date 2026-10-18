@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { PULSE, ROAD, ZONES } from './config.js';
 import { createRenderer } from './render/renderer.js';
 import { createSky, createRain } from './render/sky.js';
-import { emitPulse, updatePulses, livePulses } from './render/pulseMaterial.js';
+import { emitPulse, updatePulses, livePulses, dissolveUniforms } from './render/pulseMaterial.js';
 import { Particles } from './render/particles.js';
 import { Reflections } from './render/environment.js';
 import { ChunkManager, warmStart } from './world/chunks.js';
@@ -16,6 +16,7 @@ import { Narrows } from './world/narrows.js';
 import { LOOP_LEN } from './world/track.js';
 import { Answerers } from './world/answerers.js';
 import { Trail } from './world/trail.js';
+import { Forks } from './world/forks.js';
 import { collidersFrom, updateBodies } from './world/bodies.js';
 import { Vehicle } from './player/vehicle.js';
 import { CarView } from './player/carView.js';
@@ -25,12 +26,14 @@ import { Screens } from './ui/screens.js';
 import { Audio } from './core/audio.js';
 import { readInput } from './core/input.js';
 import { setupFullscreenButton } from './ui/fullscreen.js';
+import { setupTouch, mergeTouch } from './ui/touch.js';
 
 setupFullscreenButton();
+const TOUCH = setupTouch();
 
 const PHYS_STEP = 1 / 120;
 
-const { renderer, scene, camera, composer, post, trails } = createRenderer(document.getElementById('stage'));
+const { renderer, scene, camera, composer, post, trails, bloom } = createRenderer(document.getElementById('stage'));
 const sky = createSky(scene);
 const rain = createRain(scene);
 const audio = new Audio();
@@ -55,7 +58,11 @@ const places = [district, narrows];
 const placeAt = (x, z, margin = 0) => places.find((p) => p.inside(x, z, margin));
 const answerers = new Answerers(scene);
 for (const p of places) chunks.extras.push(p.chunk);
-chunks.avoid = (x, z) => !!placeAt(x, z, 40);
+// the off-ramps and the pocket worlds they cross
+const forks = new Forks(scene);
+vehicle.spurs = forks.spurs;
+for (const c of forks.chunks) chunks.extras.push(c);
+chunks.avoid = (x, z) => !!placeAt(x, z, 40) || forks.near(x, z);
 vehicle.street = { contains: (x, z, margin = 0) => !!placeAt(x, z, margin) };
 rig.clip = (from, to) => (placeAt(to.x, to.z, 30) || district).clipCamera(from, to);
 
@@ -88,6 +95,19 @@ for (const place of places) {
     }
   }
 }
+// a few figures standing at the road's edge in each pocket world
+forks.spurs.forEach((sp, i) => {
+  const pocket = forks.pockets[i];
+  for (const f of [0.38, 0.5, 0.63]) {
+    let t = 0;
+    while (t < sp.N - 1 && sp.U[t] < f) t++;
+    const side = (i + Math.round(f * 10)) % 2 ? 1 : -1;
+    const pos = sp.at(t, side * (ROAD.HALF_WIDTH - 0.9), 0);
+    const P = sp.sample(t);
+    watchers.spawnAt(pocket.chunk, pocket.group, pos, Math.atan2(side * P.nx, side * P.nz));
+  }
+});
+
 const hearing = (dist) => Math.max(0.12, 1 - dist / 80);
 answerers.onHop = (a, dist) => audio.launch(0.5 * hearing(dist));
 answerers.onLand = (a, dist) => {
@@ -110,19 +130,26 @@ watchers.onArrive = () => {
   post.uFlash.value = 0.08;
 };
 
-// you start parked in an alley, steam coming up through the grate
-const alley = district.alleys[1] || district.alleys[0];
-const startPos = district.toWorld(alley.u, alley.v - 10, 0);
-district.vents.push(district.toWorld(alley.u, alley.v + 4, 0));
-// parked nose-in to the alley's dead end, so the title camera sits out in the street looking back at the driver
-vehicle.placeAt(startPos.x, 0, startPos.z, -district.yawToward(0, -1)); // vehicle yaw runs opposite to object yaw
+// you start at the curb on the main drag, pointed at the ramp: W and you're on your way
+const START_U = 150;
+{
+  const p = sample(district.s0 + START_U);
+  vehicle.placeAt(p.x + p.nx * 3.2, 0, p.z + p.nz * 3.2, p.heading);
+}
 mist.setVents(places.flatMap((p) => p.vents));
 
-// the way out to the bridge, and a sign at the first corner
-const trail = new Trail(scene, district.routeToBridge(alley.u, alley.v - 10, -1));
+// marks down the lane to the bridge, and a sign where the road starts to climb
+const trail = new Trail(scene, (() => {
+  const pts = [];
+  for (let u = START_U + 8; u <= district.DU + 170; u += 8) {
+    const p = sample(district.s0 + u);
+    pts.push(new THREE.Vector3(p.x + p.nx * 3.2, p.y, p.z + p.nz * 3.2));
+  }
+  return pts;
+})());
 {
-  const { u, v, exitSign } = district.corner;
-  district.signAt('RING ROAD', exitSign < 0 ? '<- the bridge' : 'the bridge ->', district.toWorld(u + 6, v + 6, 5.2), district.faceYaw(0, 1), [0xd9e2e6, 0x9fb4c4]);
+  const p = sample(district.s0 + START_U + 60);
+  district.signAt('RING ROAD', 'the bridge ->', new THREE.Vector3(p.x + p.nx * (ROAD.HALF_WIDTH + 2.5), 5.2, p.z + p.nz * (ROAD.HALF_WIDTH + 2.5)), Math.atan2(-p.tx, -p.tz) + 0.35, [0xd9e2e6, 0x9fb4c4]);
 }
 warmStart(chunks, vehicle.s);
 rig.view = 1; // the title shot looks back at the driver
@@ -280,7 +307,7 @@ function updateFall(dt) {
 
 function physics(dt, input) {
   let ev = null;
-  const steps = Math.ceil(dt / PHYS_STEP);
+  const steps = Math.max(1, Math.ceil(dt / PHYS_STEP)); // a zero-length first frame still yields events
   const h = dt / steps;
   for (let i = 0; i < steps; i++) {
     const e = vehicle.update(h, input);
@@ -333,7 +360,7 @@ function tick(now) {
   const dt = raw * state.timeScale;
   state.time += dt;
 
-  const input = readInput();
+  const input = TOUCH ? mergeTouch(readInput()) : readInput();
   if (state.mode === 'title' && input.any) startRide();
   if (input.mute) audio.toggleMute();
   if (input.view && state.mode === 'ride') rig.cycle();
@@ -350,8 +377,19 @@ function tick(now) {
   updateBodies(chunks.each('bodies'), dt, grind);
   const along = sample(vehicle.s);
   chunks.update(vehicle.s, vehicle.vel.x * along.tx + vehicle.vel.z * along.tz >= 0 ? 1 : -1);
+  // out in a pocket world: its own light, its own name, a choir instead of the road
+  const pk = forks.update(dt, state.time, vehicle, camera);
+  ambient.pocket = pk.pocket ? { weight: pk.weight, palette: pk.pocket.palette } : null;
+  audio.choir(pk.pocket ? pk.pocket.choir : null, pk.weight);
+  if (pk.pocket && pk.weight > 0.55 && state.pocketShown !== pk.pocket) {
+    state.pocketShown = pk.pocket;
+    screens.showCard(pk.pocket.name, pk.pocket.sub);
+  }
+  if (!pk.pocket && state.pocketShown) { state.pocketShown = null; state.zone = -1; }
+  dissolveUniforms.uCar.value.copy(vehicle.pos);
+
   const z = zoneIndexAt(vehicle.s);
-  if (z !== state.zone && state.mode === 'ride') {
+  if (z !== state.zone && state.mode === 'ride' && !pk.pocket) {
     state.zone = z;
     screens.showZone(z);
     audio.setZone(z);
@@ -367,7 +405,7 @@ function tick(now) {
   if (trainNear > 0.75) rig.shake(dt * (trainNear - 0.75) * 0.8);
   ambient.update(dt, state.time, vehicle.s, vehicle.pos, chunks, pulses, ev.slam);
   particles.update(dt);
-  const inTown = !!placeAt(vehicle.pos.x, vehicle.pos.z, 30);
+  const inTown = !!placeAt(vehicle.pos.x, vehicle.pos.z, 30) || forks.weight > 0.05;
   mist.update(dt, vehicle, camera, scene.fog.color, ambient.flash, inTown);
   trail.update(dt, state.time, vehicle);
   fogLayers.update(state.time, camera, vehicle.groundY, scene.fog.color, ambient.fogThick, inTown);
@@ -398,11 +436,22 @@ function tick(now) {
   post.uWet.value = state.wet;
   post.uWind.value = rig.name === 'cabin' ? 0 : Math.min(0.6, vehicle.speed * 0.012);
   trails.uniforms.damp.value = 0.45 + Math.min(0.32, vehicle.speed * 0.009);
+  // in a pocket world the film itself changes: hue wash, echoes, soft focus, long ghosts
+  {
+    const w = forks.weight;
+    const fx = forks.active ? forks.active.post : null;
+    post.uWashAmt.value = fx ? fx.washAmt * w : 0;
+    if (fx) post.uWash.value.setRGB(...fx.wash);
+    post.uEcho.value = fx ? fx.echo * w : 0;
+    post.uSoft.value = fx ? fx.soft * w : 0;
+    if (fx) trails.uniforms.damp.value += (fx.trails - trails.uniforms.damp.value) * w;
+    bloom.strength = 0.7 + (fx ? (fx.bloom - 0.7) * w : 0);
+  }
   post.uFlash.value = Math.max(post.uFlash.value * Math.exp(-raw * 3), ambient.flash * 0.05);
   composer.render();
 }
 
 // expose a tiny handle for debugging in the console
-window.__darkride = { vehicle, state, chunks, rig, ROAD, particles, watchers, carView, scene, renderer, district, narrows, places, answerers, emitPulse, ambient };
+window.__darkride = { vehicle, state, chunks, rig, ROAD, particles, watchers, carView, scene, renderer, district, narrows, places, answerers, emitPulse, ambient, forks };
 if (TEST) import('./core/testkit.js').then((m) => m.installTestKit(window.__darkride));
 schedule(tick);

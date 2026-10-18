@@ -45,7 +45,8 @@ function stations(points) {
 }
 
 export class Trail {
-  constructor(scene, points) {
+  constructor(scene, points, { persistent = false } = {}) {
+    this.persistent = persistent;
     this.stations = stations(points);
     const n = this.stations.length;
     const geo = new THREE.PlaneGeometry(3.6, 3.6).rotateX(-Math.PI / 2);
@@ -71,7 +72,7 @@ export class Trail {
   }
 
   update(dt, time, vehicle) {
-    if (vehicle.pos.y > 7 && vehicle.onRoad) this.done = true;
+    if (!this.persistent && vehicle.pos.y > 7 && vehicle.onRoad) this.done = true;
     this.strength += ((this.done ? 0 : 1) - this.strength) * Math.min(1, dt * 0.6);
     this.mesh.visible = this.strength > 0.01;
     if (!this.mesh.visible) return;
@@ -80,7 +81,7 @@ export class Trail {
       // a soft pulse travelling from the start toward the bridge, every few seconds
       const phase = ((time * 9 - i * SPACING) % 70 + 70) % 70;
       const wave = Math.exp(-((phase - 8) ** 2) / 40);
-      const v = (0.3 + wave * 1.8) * this.strength; // HDR: the passing wave catches the bloom
+      const v = (0.3 + wave * 1.8) * this.strength * (this.persistent ? 0.8 : 1); // HDR: the passing wave catches the bloom
       this.mesh.setColorAt(i, this.c.setRGB(v * 0.9, v * 0.95, v));
     }
     this.mesh.instanceColor.needsUpdate = true;

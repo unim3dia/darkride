@@ -196,3 +196,71 @@ export function glyphMat(texture, ink = 0x9fe8ff) {
     fog: true,
   });
 }
+
+// ---------------------------------------------------------------- evaporating structure
+
+/** Shared by every dissolving surface: where the car is, and the near/far dissolve band. */
+export const dissolveUniforms = {
+  uCar: { value: new THREE.Vector3() },
+  uDissolve: { value: new THREE.Vector2(26, 95) },
+};
+
+const DISSOLVE_HEAD = /* glsl */ `
+uniform vec3 uCar;
+uniform vec2 uDissolve;
+float dissolveEdge = 0.0;
+`;
+
+const DISSOLVE_BODY = /* glsl */ `
+{
+  float dd = distance(vPulseWorld.xz, uCar.xz);
+  float gone = smoothstep(uDissolve.y, uDissolve.x, dd);   // solid far away, evaporating up close
+  float n = vnoise(vPulseWorld.xz * 0.33 + vPulseWorld.y * 0.21) * 0.6 + vnoise(vPulseWorld.xy * 1.4 + vPulseWorld.z * 0.7) * 0.4;
+  if (n < gone) discard;
+  dissolveEdge = smoothstep(0.07, 0.0, n - gone) * step(0.001, gone);
+}
+`;
+
+/**
+ * Structure you can make out from a distance that comes apart as you near it:
+ * a pulse-lit surface whose fragments drop away around the car, edges faintly lit.
+ */
+export function dissolveMat(params = {}) {
+  const m = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0.05, side: THREE.DoubleSide, ...params });
+  m.onBeforeCompile = (shader) => {
+    patch(shader);
+    Object.assign(shader.uniforms, dissolveUniforms);
+    shader.fragmentShader = DISSOLVE_HEAD + shader.fragmentShader
+      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' + DISSOLVE_BODY)
+      .replace('#include <opaque_fragment>', 'outgoingLight += vec3(0.55, 0.52, 0.48) * dissolveEdge * 0.5;\n#include <opaque_fragment>');
+  };
+  m.customProgramCacheKey = () => 'pulse-dissolve';
+  return m;
+}
+
+// ---------------------------------------------------------------- the road that isn't there
+
+const FADE_BODY = /* glsl */ `
+{
+  // only the ground right under you exists; past that it comes apart into nothing
+  float dd = distance(vPulseWorld.xz, uCar.xz);
+  float gone = smoothstep(9.0, 34.0, dd);
+  float n = vnoise(vPulseWorld.xz * 0.5) * 0.65 + vnoise(vPulseWorld.xz * 2.1) * 0.35;
+  if (n < gone) discard;
+  dissolveEdge = smoothstep(0.08, 0.0, n - gone) * step(0.001, gone);
+}
+`;
+
+/** Road surface deep in a pocket world: solid beneath the car, evaporating ahead and behind. */
+export function fadingRoadMat(params = {}) {
+  const m = new THREE.MeshStandardMaterial({ roughness: 0.3, metalness: 0.15, envMapIntensity: 0.6, ...params });
+  m.onBeforeCompile = (shader) => {
+    patch(shader);
+    Object.assign(shader.uniforms, dissolveUniforms);
+    shader.fragmentShader = DISSOLVE_HEAD + shader.fragmentShader
+      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' + FADE_BODY)
+      .replace('#include <opaque_fragment>', 'outgoingLight += vec3(0.6, 0.62, 0.66) * dissolveEdge * 0.35;\n#include <opaque_fragment>');
+  };
+  m.customProgramCacheKey = () => 'pulse-fade-road';
+  return m;
+}

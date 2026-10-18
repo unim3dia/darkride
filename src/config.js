@@ -119,6 +119,16 @@ export const ZONES = [
   },
 ];
 
+// Off-ramps: at `at` (fraction of the loop) a road peels off to `side` (+1 right, -1 left
+// when driving with the loop), crosses a pocket world `D` meters out, and merges back
+// `len` meters further on. `lift` raises (or sinks) the far part of the road.
+export const FORKS = [
+  { at: 0.1, side: 1, kind: 'dust', len: 780, D: 250, lift: -8 },
+  { at: 0.36, side: -1, kind: 'ether', len: 820, D: 280, lift: 22 },
+  { at: 0.6, side: 1, kind: 'sanctum', len: 800, D: 270, lift: 4 },
+  { at: 0.8, side: -1, kind: 'ephemera', len: 780, D: 260, lift: 10 },
+];
+
 export const HOMES = [
   { s: 0, kind: 'district' },     // the Underpass
   { s: 0.5, kind: 'narrows' },    // the Narrows, halfway round the ring (fraction of the loop)

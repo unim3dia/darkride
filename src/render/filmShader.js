@@ -13,6 +13,10 @@ export const FilmShader = {
     uFade: { value: 0.0 },
     uWet: { value: 0.35 },       // how rained-on the lens is
     uWind: { value: 0.0 },       // drops streak sideways at speed
+    uWash: { value: new THREE.Color(1, 1, 1) }, // pocket worlds: the whole frame drawn toward one hue
+    uWashAmt: { value: 0.0 },
+    uEcho: { value: 0.0 },       // the picture doubled, breathing in and out of itself
+    uSoft: { value: 0.0 },       // focus let go
     uResolution: { value: new THREE.Vector2(1, 1) },
   },
   vertexShader: /* glsl */ `
@@ -21,7 +25,8 @@ export const FilmShader = {
   `,
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse;
-    uniform float uTime, uGrain, uAberration, uVignette, uFlash, uFade, uWet, uWind;
+    uniform float uTime, uGrain, uAberration, uVignette, uFlash, uFade, uWet, uWind, uWashAmt, uEcho, uSoft;
+    uniform vec3 uWash;
     uniform vec2 uResolution;
     varying vec2 vUv;
 
@@ -69,10 +74,29 @@ export const FilmShader = {
       vec3 soft = texture2D(tDiffuse, uv + vec2(0.004, 0.0)).rgb + texture2D(tDiffuse, uv - vec2(0.0, 0.004)).rgb;
       col = mix(col, soft * 0.5 * 1.12, dropMask * 0.6);
 
+      // senses washed: soft focus, then the frame echoing itself from the center
+      if (uSoft > 0.001) {
+        vec3 blur = vec3(0.0);
+        for (int k = 0; k < 8; k++) {
+          float a = float(k) * 0.785 + uTime * 0.3;
+          blur += texture2D(tDiffuse, uv + vec2(cos(a), sin(a)) * 0.006 * (1.0 + r2 * 4.0)).rgb;
+        }
+        col = mix(col, blur / 8.0, uSoft);
+      }
+      if (uEcho > 0.001) {
+        float br = 0.05 + 0.03 * sin(uTime * 0.4);
+        vec3 inner = texture2D(tDiffuse, 0.5 + c * (1.0 - br)).rgb;
+        vec3 outer = texture2D(tDiffuse, 0.5 + c * (1.0 + br)).rgb;
+        col = max(col, mix(col, (inner + outer) * 0.5, uEcho) * 1.02);
+      }
+
       // grade: crush blacks, cool the shadows, keep highlights bone-white
       float l = dot(col, vec3(0.299, 0.587, 0.114));
       col = mix(col, col * vec3(0.86, 0.96, 1.08), smoothstep(0.35, 0.0, l));
       col = max(col - 0.012, 0.0) * 1.03;
+
+      float lw = dot(col, vec3(0.299, 0.587, 0.114));
+      col = mix(col, uWash * lw * 1.35, uWashAmt);
 
       col *= 1.0 - smoothstep(0.18, 0.78, r2 * uVignette);
 

@@ -280,7 +280,7 @@ export class Audio {
     const roll = airborne ? 0 : Math.min(1, speed / 30);
     this.tires.gain.setTargetAtTime(roll * 0.13, t, airborne ? 0.02 : 0.08);
     this.tireFilter.frequency.setTargetAtTime(700 + speed * 45, t, 0.1);
-    this.wind.gain.setTargetAtTime(Math.min(0.12, speed * 0.0028), t, 0.2);
+    this.wind.gain.setTargetAtTime(Math.min(0.12, speed * 0.0028) + (this.windBoost || 0) * 0.09, t, 0.4);
     this.windFilter.frequency.setTargetAtTime(300 + speed * 22, t, 0.2);
   }
 
@@ -422,6 +422,87 @@ export class Audio {
     if (!this.ctx) return;
     this.burst('highpass', 4000, 0.15, 0.12, 0.7, 0.4);
     this.tone(3200, 0.03, 0.2, { type: 'square', wet: 0.4 });
+  }
+
+  // ---------------------------------------------------------------- the choir
+
+  /**
+   * Voices in pure intervals: each voice is three detuned saws through a bank of
+   * vowel formants, with a slow vibrato. Chords glide into one another.
+   */
+  buildChoir() {
+    const ctx = this.ctx;
+    this.choirBus = this.gain(0);
+    this.choirBus.connect(this.master);
+    this.choirBus.connect(this.gain(1.3)).connect(this.verbIn);
+    this.voices = [];
+    for (let v = 0; v < 5; v++) {
+      const vg = this.gain(0);
+      const sum = this.gain(1);
+      const formants = [0, 1, 2].map((k) => {
+        const f = this.filter('bandpass', 800, 7);
+        f.connect(this.gain([1, 0.5, 0.22][k])).connect(sum);
+        return f;
+      });
+      sum.connect(vg).connect(this.choirBus);
+      const oscs = [-8, 0, 7].map((c) => {
+        const o = ctx.createOscillator();
+        o.type = 'sawtooth';
+        o.detune.value = c + (Math.random() - 0.5) * 6;
+        for (const f of formants) o.connect(f);
+        o.start();
+        return o;
+      });
+      const vib = ctx.createOscillator();
+      vib.frequency.value = 4.4 + Math.random() * 1.2;
+      const vibAmt = this.gain(8);
+      vib.connect(vibAmt);
+      for (const o of oscs) vibAmt.connect(o.detune);
+      vib.start();
+      this.voices.push({ vg, oscs, formants });
+    }
+    this.choirDef = null;
+    this.choirStep = 0;
+    this.nextChoir = 0;
+  }
+
+  /** Fade the choir in by `weight` with the pocket's voicing; the road drone steps back. */
+  choir(def, weight) {
+    if (!this.ctx) return;
+    if (!this.voices) this.buildChoir();
+    const t = this.ctx.currentTime;
+    this.choirBus.gain.setTargetAtTime(weight * 0.05, t, 0.8);
+    if (t > 9) this.droneGain.gain.setTargetAtTime(0.06 * (1 - weight * 0.85), t, 1.0);
+    this.windBoost = def && def.wind ? def.wind * weight : 0;
+    if (!def || weight < 0.01) return;
+    const FORMANTS = { ah: [800, 1150, 2900], oo: [325, 700, 2530], oh: [450, 800, 2830], ee: [270, 2140, 2950] };
+    if (def !== this.choirDef) {
+      this.choirDef = def;
+      this.choirStep = 0;
+      this.nextChoir = 0;
+      for (const v of this.voices) {
+        v.formants.forEach((f, k) => f.frequency.setTargetAtTime(FORMANTS[def.formant][k], t, 0.4));
+        v.oscs.forEach((o, k) => o.detune.setTargetAtTime([-1, 0, 1][k] * (def.detune || 8), t, 0.5));
+      }
+    }
+    if (t < this.nextChoir) return;
+    const chord = def.chords[this.choirStep++ % def.chords.length];
+    this.voices.forEach((v, i) => {
+      const r = chord[i];
+      if (r) {
+        for (const o of v.oscs) o.frequency.setTargetAtTime(def.root * r, t, 0.9);
+        v.vg.gain.setTargetAtTime(0.25 / Math.sqrt(chord.length), t, 1.4);
+      } else v.vg.gain.setTargetAtTime(0, t, 1.2);
+    });
+    this.nextChoir = t + def.dur;
+    if (def.bells) this.bell(def.root * chord[Math.floor(Math.random() * chord.length)] * 2, weight);
+  }
+
+  /** A struck bowl: inharmonic partials, a long ring into the reverb. */
+  bell(f, level = 1) {
+    [[1, 1], [2.76, 0.45], [5.4, 0.22], [8.93, 0.1]].forEach(([p, a], i) => {
+      this.tone(f * p, 0.05 * a * level, 5 - i, { attack: 0.003, wet: 1, delay: Math.random() * 0.02 });
+    });
   }
 
   toggleMute() {

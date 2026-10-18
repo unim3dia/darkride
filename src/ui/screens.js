@@ -23,9 +23,12 @@ export class Screens {
   }
 
   showZone(i) {
-    const z = ZONES[i];
-    $('zone-name').textContent = z.name;
-    $('zone-sub').textContent = z.sub;
+    this.showCard(ZONES[i].name, ZONES[i].sub);
+  }
+
+  showCard(name, sub) {
+    $('zone-name').textContent = name;
+    $('zone-sub').textContent = sub;
     this.zone.classList.add('show');
     clearTimeout(this.zoneTimer);
     this.zoneTimer = setTimeout(() => this.zone.classList.remove('show'), 5200);

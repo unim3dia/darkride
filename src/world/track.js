@@ -1,6 +1,6 @@
 // The ring road: a closed loop that climbs out of the district onto the deck,
 // circles the dead city through four zones, and comes back down to the street.
-import { ROAD, ZONES, HOMES } from '../config.js';
+import { ROAD, ZONES, HOMES, FORKS as FORK_DEFS } from '../config.js';
 
 // ---------------------------------------------------------------- build the loop
 
@@ -60,11 +60,32 @@ export function gradeAt(s) {
   return smooth(ROAD.GRADE_FLAT, ROAD.GRADE_FLAT + ROAD.GRADE_RAMP, fromHome(s));
 }
 
+// rolling hills: how much of the roller-coaster each meter of the loop gets (built lazily,
+// eased in and out over a few hundred meters so the zones that have them fade in)
+const HILL_ZONES = new Set(); // the highway stays level; the rollers live out in the pocket worlds
+let HILL = null;
+function hillWeight(s) {
+  if (!HILL) {
+    const raw = new Float32Array(N);
+    for (let i = 0; i < N; i++) raw[i] = HILL_ZONES.has(ZONES[zoneIndexAt(i * STEP)].kind) ? 1 : 0;
+    HILL = new Float32Array(N);
+    const R = 180;
+    let acc = 0;
+    for (let i = -R; i <= R; i++) acc += raw[(i + N) % N];
+    for (let i = 0; i < N; i++) {
+      HILL[i] = acc / (2 * R + 1);
+      acc += raw[(i + R + 1) % N] - raw[(i - R + N) % N];
+    }
+  }
+  return HILL[Math.floor(wrap(s) / STEP) % N];
+}
+
 export function elevation(s) {
   const k = gradeAt(s);
   if (k === 0) return 0;
   const w = (wrap(s) / LOOP_LEN) * Math.PI * 2;
-  return k * (ROAD.DECK_HEIGHT + 2.6 * Math.sin(w * 9) + 1.4 * Math.sin(w * 23 + 2.1));
+  const hills = hillWeight(s) * (2.0 * Math.sin(s / 14) + 0.6 * Math.sin(s / 7.3 + 1.7));
+  return k * (ROAD.DECK_HEIGHT + 2.6 * Math.sin(w * 9) + 1.4 * Math.sin(w * 23 + 2.1) + hills);
 }
 
 /** Point + frame on the centerline at distance s. Reuses `out` to avoid garbage. */
@@ -226,4 +247,38 @@ export function gapAt(s) {
 export function hasBarrier(s) {
   const i = Math.floor(wrap(s) / CHUNK_LEN);
   return elevation(i * CHUNK_LEN) > 1.2 || elevation((i + 1) * CHUNK_LEN) > 1.2;
+}
+
+// ---------------------------------------------------------------- forks
+
+/** Where each off-ramp leaves and rejoins the loop, and how long the two roads overlap. */
+export const FORKS = FORK_DEFS.map((f) => {
+  const sA = f.at * LOOP_LEN;
+  // the off-ramp separates once its deck no longer touches the highway's
+  const uSep = Math.asin(Math.sqrt((2 * (ROAD.HALF_WIDTH + 0.8)) / f.D)) / Math.PI;
+  return { ...f, sA, sB: sA + f.len, uSep };
+});
+
+/** Is the highway's jersey barrier open on this side here (where an off-ramp peels away)? */
+export function forkOpen(s, side) {
+  const w = wrap(s);
+  for (const f of FORKS) {
+    if (Math.sign(side) !== f.side) continue;
+    const lap = f.uSep * f.len;
+    if ((w > f.sA - 3 && w < f.sA + lap) || (w > f.sB - lap && w < f.sB + 3)) return true;
+  }
+  return false;
+}
+
+/** The open stretches on one side within [a, b], for drawing the barrier in pieces. */
+export function barrierSpans(a, b, side) {
+  let spans = [[a, b]];
+  for (const f of FORKS) {
+    if (f.side !== side) continue;
+    const lap = f.uSep * f.len;
+    for (const [o0, o1] of [[f.sA - 3, f.sA + lap], [f.sB - lap, f.sB + 3]]) {
+      spans = spans.flatMap(([x, y]) => (o1 <= x || o0 >= y ? [[x, y]] : [[x, o0], [o1, y]].filter(([p, q]) => q - p > 0.5)));
+    }
+  }
+  return spans;
 }

@@ -65,6 +65,7 @@ export class Ambient {
     this.exposure = lerpScalar('exposure', s);
     this.light = lerpScalar('light', s);
     this.grain = lerpScalar('grain', s);
+    this.applyPocket(time);
 
     // ---- lightning: a double-flicker, then thunder arrives late
     this.nextStrike -= dt * (this.rain > 0.55 ? 1 : 0); // lightning only in a real storm
@@ -107,6 +108,26 @@ export class Ambient {
     }
   }
 
+  /** Out on a ramp, the pocket world's own light and air take over, by `pocket.weight`. */
+  applyPocket(time) {
+    const pk = this.pocket;
+    if (!pk || pk.weight <= 0.001) return;
+    const w = pk.weight;
+    const P = pk.palette;
+    const u = this.sky.uniforms;
+    this.scene.fog.color.lerp(c1.set(P.fog), w);
+    u.uTop.value.lerp(c1.set(P.skyTop), w);
+    u.uHorizon.value.lerp(c1.set(P.skyHorizon), w);
+    u.uGlow.value.lerp(c1.set(P.glow), w);
+    u.uFog.value.copy(this.scene.fog.color);
+    const breathe = 1 + 0.18 * Math.sin(time * 0.13) + 0.1 * Math.sin(time * 0.31);
+    this.scene.fog.density += (WORLD.FOG_DENSITY * P.fogMul * breathe - this.scene.fog.density) * w;
+    this.fogThick += (P.fogMul - this.fogThick) * w;
+    this.light += (P.light - this.light) * w;
+    this.exposure += (P.exposure - this.exposure) * w;
+    this.grain += (P.grain - this.grain) * w;
+  }
+
   updateWeather(dt, s) {
     const w = this.weather;
     w.timer -= dt;
@@ -118,7 +139,8 @@ export class Ambient {
     }
     // in a zone that hardly rains, the sky lets up even mid-spell
     const cap = 0.15 + lerpScalar('rainy', s) * 1.2;
-    const target = Math.min(w.target, cap);
+    let target = Math.min(w.target, cap);
+    if (this.pocket && this.pocket.weight > 0) target += (this.pocket.palette.rain - target) * this.pocket.weight;
     this.rain += (target - this.rain) * Math.min(1, dt * 0.08);
   }
 
