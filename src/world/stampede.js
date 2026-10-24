@@ -163,7 +163,8 @@ function herdPlan() {
   const pick = (list) => list[Math.floor(Math.random() * list.length)];
   for (const side of [-1, 1]) {
     // right against the car: wolves and bison at the very edge of the road
-    for (let k = 0; k < 8; k++) plan.push({ kind: k % 2 ? 'wolf' : pick(['bison', 'horse']), d: side * (4.9 + Math.random() * 1.2), scale: k % 2 ? 1.2 : 1.1, rise: 0, s: -60 + k * 17 });
+    for (let k = 0; k < 8; k++) plan.push({ kind: 'wolf', d: side * (5.6 + Math.random() * 0.6), scale: 1.15, rise: 0, s: -60 + k * 17 });
+    for (let k = 0; k < 7; k++) plan.push({ kind: pick(['horse', 'elk', 'bison']), d: side * (8.2 + Math.random()), scale: 1.1, rise: 0, s: -50 + k * 20 });
     // a wall of them, floor to sky: rows stacked up and out, each row higher
     for (let row = 0; row < 7; row++) {
       const n = 9 - Math.floor(row / 2);
@@ -307,7 +308,8 @@ export class Stampede {
       const far = Math.abs(a.d) / 60;
       const arrive = THREE.MathUtils.clamp((this.w - far * 0.5) * 2.5, 0, 1);
       const breathe = 0.78 + 0.3 * Math.sin(time * a.wave + a.seed); // mostly there, crumbling from the back
-      const form = ends * arrive * (Math.abs(a.d) < 8 ? Math.max(0.85, breathe) : breathe);
+      const byLens = Math.abs(a.sOff + 8) < a.len * a.scaleK * 0.7 && Math.abs(a.d) < 9 ? 0.25 : 1;
+      const form = byLens * ends * arrive * (Math.abs(a.d) < 8 ? Math.max(0.85, breathe) : breathe);
       a.mat.userData.form.value = form;
       a.g.visible = form > 0.02;
       if (!a.g.visible) continue;
