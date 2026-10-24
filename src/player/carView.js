@@ -95,7 +95,7 @@ export class CarView {
     const m = this.model;
     m.root.position.copy(v.pos);
     m.root.position.y = v.rideY ?? v.pos.y;
-    m.root.rotation.set(v.airPitch, -v.yaw, v.airRoll);
+    m.root.rotation.set(v.airPitch + (v.groundPitch || 0), -v.yaw, v.airRoll);
     m.body.position.y = v.bodyY + v.liftY;
     m.body.rotation.set(v.pitch + v.liftPitch, 0, v.roll + v.liftRoll);
 

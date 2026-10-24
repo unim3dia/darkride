@@ -157,42 +157,47 @@ function ribbon(track, d0, d1, y0, y1, step = 3, uvs = null) {
   return g;
 }
 
-/** Cracks and frozen bubbles, glowing from inside. */
+/** Grey marble: soft veins drifting through pale ice. */
 function iceTexture() {
+  const W = 256;
+  const H = 512;
+  const G = 32;
+  const grid = Array.from({ length: (G + 1) * (G + 1) }, () => Math.random());
+  const vnoise = (x, y) => {
+    const xi = Math.floor(x) % G;
+    const yi = Math.floor(y) % G;
+    const fx = x - Math.floor(x);
+    const fy = y - Math.floor(y);
+    const sx = fx * fx * (3 - 2 * fx);
+    const sy = fy * fy * (3 - 2 * fy);
+    const at = (i, j) => grid[(j % G) * (G + 1) + (i % G)];
+    const a = at(xi, yi) + (at(xi + 1, yi) - at(xi, yi)) * sx;
+    const b = at(xi, yi + 1) + (at(xi + 1, yi + 1) - at(xi, yi + 1)) * sx;
+    return a + (b - a) * sy;
+  };
   const c = document.createElement('canvas');
-  c.width = 256;
-  c.height = 512;
+  c.width = W;
+  c.height = H;
   const g = c.getContext('2d');
-  g.fillStyle = '#020a0e';
-  g.fillRect(0, 0, 256, 512);
-  // a deep glow pooling in places under the surface
-  for (let k = 0; k < 8; k++) {
-    const x = Math.random() * 256;
-    const y = Math.random() * 512;
-    const rg = g.createRadialGradient(x, y, 0, x, y, 60 + Math.random() * 80);
-    rg.addColorStop(0, 'rgba(40,120,150,0.35)');
-    rg.addColorStop(1, 'rgba(0,0,0,0)');
-    g.fillStyle = rg;
-    g.fillRect(0, 0, 256, 512);
+  const img = g.createImageData(W, H);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const u = (x / W) * 4;
+      const v = (y / H) * 8;
+      let turb = 0;
+      let amp = 1;
+      let f = 1;
+      for (let o = 0; o < 4; o++) { turb += vnoise(u * f, v * f) * amp; amp *= 0.5; f *= 2; }
+      const vein = Math.pow(Math.abs(Math.sin(u * 1.3 + v * 0.6 + turb * 3.2)), 0.3);
+      const tone = 105 + vein * 120 + (turb - 0.9) * 40;
+      const i = (y * W + x) * 4;
+      img.data[i] = tone * 0.96;
+      img.data[i + 1] = tone;
+      img.data[i + 2] = tone * 1.04;
+      img.data[i + 3] = 255;
+    }
   }
-  g.shadowColor = 'rgba(160,240,255,0.9)';
-  g.shadowBlur = 6;
-  for (let k = 0; k < 40; k++) {
-    let x = Math.random() * 256;
-    let y = Math.random() * 512;
-    g.strokeStyle = `rgba(170,240,255,${0.45 + Math.random() * 0.55})`;
-    g.lineWidth = 0.6 + Math.random() * 1.6;
-    g.beginPath();
-    g.moveTo(x, y);
-    for (let i = 0; i < 6; i++) { x += (Math.random() - 0.5) * 70; y += (Math.random() - 0.5) * 90; g.lineTo(x, y); }
-    g.stroke();
-  }
-  for (let k = 0; k < 160; k++) {
-    g.fillStyle = `rgba(200,245,255,${Math.random() * 0.5})`;
-    g.beginPath();
-    g.arc(Math.random() * 256, Math.random() * 512, Math.random() * 2.2, 0, Math.PI * 2);
-    g.fill();
-  }
+  g.putImageData(img, 0, 0);
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.colorSpace = THREE.SRGBColorSpace;
@@ -247,22 +252,36 @@ function buildSet(track, scene, r) {
   const group = new THREE.Group();
   group.visible = false;
   scene.add(group);
-  // the road: a ribbon of glowing ice, lit from inside, slick as glass
+  // the road: translucent grey ice, faintly marbled, a little light living in it
   const ice = iceTexture();
-  ice.repeat.set(1, 1);
-  // (barely any sky in it: a mirror finish just turns it into a flat sheet of fog)
   const road = new THREE.MeshStandardMaterial({
-    color: 0x04121a, roughness: 0.22, metalness: 0.0, envMapIntensity: 0.12,
-    emissive: 0x9ff2ff, emissiveMap: ice, emissiveIntensity: 2.6, side: THREE.DoubleSide,
+    color: 0x8a9096, map: ice, roughness: 0.18, metalness: 0.0, envMapIntensity: 0.35,
+    emissive: 0x2a3034, emissiveMap: ice, emissiveIntensity: 0.6,
+    transparent: true, opacity: 0.8, side: THREE.DoubleSide,
     polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4,
   });
   const uvs = [];
   group.add(new THREE.Mesh(ribbon(track, -HW - 0.8, HW + 0.8, 0.04, 0.04, 3, uvs), road));
   // its frozen depth: a dimmer slab beneath, glowing through
-  group.add(new THREE.Mesh(ribbon(track, -HW - 0.8, HW + 0.8, -0.05, -1.4), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.03, 0.2, 0.28) })));
+  group.add(new THREE.Mesh(ribbon(track, -HW - 0.8, HW + 0.8, -0.05, -1.4), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.1, 0.11, 0.12), transparent: true, opacity: 0.7, depthWrite: false })));
   // edges drawn in light: the one thing that's always certain
   const line = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.9, 2.2, 2.6), fog: false });
   for (const s of [-1, 1]) group.add(new THREE.Mesh(ribbon(track, s * (HW + 0.5) - 0.07, s * (HW + 0.5) + 0.07, 0.07, 0.07, 2), line));
+  // a dashed line down the middle, softly lit, counting off the speed
+  const dashes = [];
+  const A = {};
+  const B = {};
+  for (let t = 0; t < track.N - 4; t += 9) {
+    for (let k = 0; k < 3; k++) {
+      track.sample(t + k * 1.2, A);
+      track.sample(t + (k + 1) * 1.2, B);
+      const c = (p, d) => [p.x + p.nx * d, p.y + 0.08, p.z + p.nz * d];
+      dashes.push(...c(A, -0.09), ...c(B, -0.09), ...c(B, 0.09), ...c(A, -0.09), ...c(B, 0.09), ...c(A, 0.09));
+    }
+  }
+  const dg = new THREE.BufferGeometry();
+  dg.setAttribute('position', new THREE.Float32BufferAttribute(dashes, 3));
+  group.add(new THREE.Mesh(dg, new THREE.MeshBasicMaterial({ color: new THREE.Color(0.75, 0.78, 0.82), side: THREE.DoubleSide })));
   // posts of light where the invisible walls are
   const posts = [];
   for (let t = 0; t < track.N; t += 12) {

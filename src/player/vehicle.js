@@ -201,7 +201,36 @@ export class Vehicle {
     this.updateCorners(dt, input, ev);
     this.wheelSpin += (this.vel.dot(f) / 0.37) * dt;
     this.easeSteps(dt);
+    this.followSlope(dt, f, onRoadPlan && this.pos.y > deckY - 2.5 ? p.s : null);
     return ev;
+  }
+
+  /**
+   * Tilt with the road: nose up a climb, nose down a drop, so the body sits on
+   * the surface instead of floating over crests and sinking into dips.
+   */
+  followSlope(dt, f, deckS) {
+    let want = 0;
+    if (!this.airborne) {
+      const h = this.spurHit;
+      let ahead;
+      let behind;
+      if (h) {
+        const sp = h.spur;
+        const A = sp.sample(h.t);
+        const dir = Math.sign(A.tx * f.x + A.tz * f.z) || 1;
+        ahead = sp.sample(h.t + dir * 1.8).y;
+        behind = sp.sample(h.t - dir * 1.8).y;
+      } else if (deckS !== null) {
+        const A = sample(deckS);
+        const dir = Math.sign(A.tx * f.x + A.tz * f.z) || 1;
+        ahead = elevation(deckS + dir * 1.8);
+        behind = elevation(deckS - dir * 1.8);
+      }
+      want = ahead === undefined ? 0 : Math.atan2(ahead - behind, 3.6);
+    }
+    // in the air the flight's own attitude takes over; let the road's tilt go gently
+    this.groundPitch = (this.groundPitch || 0) + (want - (this.groundPitch || 0)) * Math.min(1, dt * (this.airborne ? 3 : 14));
   }
 
   /**
