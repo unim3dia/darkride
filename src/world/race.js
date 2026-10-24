@@ -5,7 +5,6 @@ import * as THREE from 'three';
 import { ROAD } from '../config.js';
 import { buildStaticCar } from '../player/carModel.js';
 import { buildBeam } from '../player/carLights.js';
-import { fadingRoadMat } from '../render/pulseMaterial.js';
 
 const HW = ROAD.HALF_WIDTH;
 const ORIGIN = new THREE.Vector3(9200, 0, -9200); // far off the map, lost in its own fog
@@ -29,9 +28,9 @@ export class RaceTrack {
     const M = 4000;
     for (let i = 0; i < M; i++) {
       const th = (i / M) * Math.PI * 2;
-      const r = 250 + 70 * Math.sin(2 * th) + 38 * Math.sin(3 * th + 1) + 18 * Math.sin(5 * th + 2);
-      // hills: a long climb, a crest you'll float over, a drop, a dip
-      const y = 22 + 16 * Math.sin(2 * th + 0.5) + 7 * Math.sin(5 * th + 1.1) + 3 * Math.sin(9 * th);
+      const r = 250 + 70 * Math.sin(2 * th) + 38 * Math.sin(3 * th + 1) + 18 * Math.sin(5 * th + 2) + 7 * Math.sin(9 * th + 0.4);
+      // hills: a long climb, crests you'll float over, drops, a run of whoops
+      const y = 24 + 21 * Math.sin(2 * th + 0.5) + 8.5 * Math.sin(5 * th + 1.1) + 3.5 * Math.sin(11 * th) * Math.max(0, Math.sin(th - 0.6));
       raw.push([ORIGIN.x + r * Math.cos(th), ORIGIN.z + r * Math.sin(th), y]);
     }
     const cum = [0];
@@ -132,7 +131,7 @@ export class RaceTrack {
 
 // ---------------------------------------------------------------- the set
 
-function ribbon(track, d0, d1, y0, y1, step = 3) {
+function ribbon(track, d0, d1, y0, y1, step = 3, uvs = null) {
   const pos = [];
   const A = {};
   const B = {};
@@ -142,6 +141,7 @@ function ribbon(track, d0, d1, y0, y1, step = 3) {
     const c = (p, d, y) => [p.x + p.nx * d, p.y + y, p.z + p.nz * d];
     const a0 = c(A, d0, y0), a1 = c(A, d1, y0), b0 = c(B, d0, y0), b1 = c(B, d1, y0);
     pos.push(...a0, ...b0, ...b1, ...a0, ...b1, ...a1);
+    if (uvs) { const v0 = t / 20; const v1 = (t + step) / 20; uvs.push(0, v0, 0, v1, 1, v1, 0, v0, 1, v1, 1, v0); }
     if (y1 !== y0) {
       const a2 = c(A, d1, y1), a3 = c(A, d0, y1), b2 = c(B, d1, y1), b3 = c(B, d0, y1);
       pos.push(...a3, ...a0, ...a1, ...a3, ...a1, ...a2);
@@ -152,19 +152,116 @@ function ribbon(track, d0, d1, y0, y1, step = 3) {
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  if (uvs) g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   g.computeVertexNormals();
   return g;
+}
+
+/** Cracks and frozen bubbles, glowing from inside. */
+function iceTexture() {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 512;
+  const g = c.getContext('2d');
+  g.fillStyle = '#020a0e';
+  g.fillRect(0, 0, 256, 512);
+  // a deep glow pooling in places under the surface
+  for (let k = 0; k < 8; k++) {
+    const x = Math.random() * 256;
+    const y = Math.random() * 512;
+    const rg = g.createRadialGradient(x, y, 0, x, y, 60 + Math.random() * 80);
+    rg.addColorStop(0, 'rgba(40,120,150,0.35)');
+    rg.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = rg;
+    g.fillRect(0, 0, 256, 512);
+  }
+  g.shadowColor = 'rgba(160,240,255,0.9)';
+  g.shadowBlur = 6;
+  for (let k = 0; k < 40; k++) {
+    let x = Math.random() * 256;
+    let y = Math.random() * 512;
+    g.strokeStyle = `rgba(170,240,255,${0.45 + Math.random() * 0.55})`;
+    g.lineWidth = 0.6 + Math.random() * 1.6;
+    g.beginPath();
+    g.moveTo(x, y);
+    for (let i = 0; i < 6; i++) { x += (Math.random() - 0.5) * 70; y += (Math.random() - 0.5) * 90; g.lineTo(x, y); }
+    g.stroke();
+  }
+  for (let k = 0; k < 160; k++) {
+    g.fillStyle = `rgba(200,245,255,${Math.random() * 0.5})`;
+    g.beginPath();
+    g.arc(Math.random() * 256, Math.random() * 512, Math.random() * 2.2, 0, Math.PI * 2);
+    g.fill();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/** The limo: the same land yacht with the middle stretched out, black lacquer, mirror rims. */
+function buildLimo() {
+  const car = buildStaticCar(false);
+  const E = 1.35;
+  car.traverse((o) => {
+    if (!o.isMesh) return;
+    const g = o.geometry.clone();
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const z = p.getZ(i);
+      p.setZ(i, z < -0.9 ? z - E : z > 0.9 ? z + E : z * (0.9 + E) / 0.9);
+    }
+    g.computeBoundingSphere();
+    o.geometry = g;
+  });
+  car.children[0].material = new THREE.MeshPhysicalMaterial({ color: 0x050506, roughness: 0.18, metalness: 0.4, clearcoat: 1, clearcoatRoughness: 0.05, envMapIntensity: 1.6 });
+  const chrome = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.04, metalness: 1, envMapIntensity: 2.6 });
+  car.children[3].material = chrome;
+  car.children[7].material = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.3 }); // whitewalls
+  // glints that skate round the rims
+  const star = document.createElement('canvas');
+  star.width = star.height = 64;
+  const sg = star.getContext('2d');
+  const grad = sg.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.15, 'rgba(220,240,255,0.6)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  sg.fillStyle = grad;
+  sg.fillRect(0, 0, 64, 64);
+  sg.fillStyle = 'rgba(255,255,255,0.9)';
+  sg.fillRect(31, 2, 2, 60);
+  sg.fillRect(2, 31, 60, 2);
+  const tex = new THREE.CanvasTexture(star);
+  const glints = [];
+  for (const [x, z] of [[-0.86, -1.72 - E], [0.86, -1.72 - E], [-0.86, 1.86 + E], [0.86, 1.86 + E]]) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, color: new THREE.Color(2.5, 2.6, 2.8), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+    sp.userData = { x: x + Math.sign(x) * 0.18, z, phase: Math.random() * 6 };
+    car.add(sp);
+    glints.push(sp);
+  }
+  car.userData.glints = glints;
+  return car;
 }
 
 function buildSet(track, scene, r) {
   const group = new THREE.Group();
   group.visible = false;
   scene.add(group);
-  // the road: there, and not quite; it dissolves away from you into the pale
-  const road = fadingRoadMat({ color: 0x2a2d31, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
-  group.add(new THREE.Mesh(ribbon(track, -HW - 0.8, HW + 0.8, 0.04, -0.6), road));
+  // the road: a ribbon of glowing ice, lit from inside, slick as glass
+  const ice = iceTexture();
+  ice.repeat.set(1, 1);
+  // (barely any sky in it: a mirror finish just turns it into a flat sheet of fog)
+  const road = new THREE.MeshStandardMaterial({
+    color: 0x04121a, roughness: 0.22, metalness: 0.0, envMapIntensity: 0.12,
+    emissive: 0x9ff2ff, emissiveMap: ice, emissiveIntensity: 2.6, side: THREE.DoubleSide,
+    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4,
+  });
+  const uvs = [];
+  group.add(new THREE.Mesh(ribbon(track, -HW - 0.8, HW + 0.8, 0.04, 0.04, 3, uvs), road));
+  // its frozen depth: a dimmer slab beneath, glowing through
+  group.add(new THREE.Mesh(ribbon(track, -HW - 0.8, HW + 0.8, -0.05, -1.4), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.03, 0.2, 0.28) })));
   // edges drawn in light: the one thing that's always certain
-  const line = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 1.65, 1.7), fog: false });
+  const line = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.9, 2.2, 2.6), fog: false });
   for (const s of [-1, 1]) group.add(new THREE.Mesh(ribbon(track, s * (HW + 0.5) - 0.07, s * (HW + 0.5) + 0.07, 0.07, 0.07, 2), line));
   // posts of light where the invisible walls are
   const posts = [];
@@ -190,6 +287,17 @@ function buildSet(track, scene, r) {
     frame.rotation.set(0, -P.heading, (r() - 0.5) * 0.35, 'YXZ');
     group.add(frame);
     gates.push(frame);
+  }
+  // hoops of light the road threads through, closer together on the fast parts
+  const hoopMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.6, 1.9, 2.3), transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false });
+  for (let t = 30; t < track.N - 30; t += 34 + Math.floor(r() * 50)) {
+    if (track.bend(t, 30) > 0.5) continue;
+    track.sample(t, P);
+    const hoop = new THREE.Mesh(new THREE.TorusGeometry(HW + 4 + r() * 3, 0.16, 6, 64), hoopMat);
+    hoop.position.set(P.x, P.y + 2, P.z);
+    hoop.rotation.set(0, -P.heading, r() * Math.PI, 'YXZ');
+    group.add(hoop);
+    gates.push(hoop);
   }
   // rings, enormous and slow, hanging in the air around the circuit
   const ringMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.86, 0.9, 0.95), transparent: true, opacity: 0.35, depthWrite: false });
@@ -279,11 +387,11 @@ export class Race {
     this.t = 0;
     this.fade = 0;
     // the rival: another black lowrider, lamps on, someone hooded at the wheel
-    const car = buildStaticCar(false);
+    const car = buildLimo();
     car.rotation.order = 'YXZ';
     for (const x of [-0.86, 0.86]) {
       const b = buildBeam(30, 4);
-      b.position.set(x, 0.74, -2.95);
+      b.position.set(x, 0.74, -2.95 - 1.35);
       car.add(b);
     }
     this.rival = { mesh: car, t: 0, lane: 3.2, v: 0, dist: 0 };
@@ -315,6 +423,58 @@ export class Race {
 
   get active() { return this.phase !== 'idle'; }
 
+  /**
+   * Now and then during the race the camera leaves its post: an orbit round the
+   * back of both cars, a crane up to look down on them, a pass alongside.
+   * Eases out of the chase position and back into it, so you never lose the car.
+   */
+  shot(camera, v, dt) {
+    const S = this.cine;
+    S.t += dt;
+    const w = smooth(0, 1.1, S.t) * (1 - smooth(S.dur - 1.1, S.dur, S.t));
+    const f = v.forward.clone();
+    const r = new THREE.Vector3(-f.z, 0, f.x);
+    const p = v.pos.clone();
+    p.y += v.bodyY;
+    const mid = p.clone().lerp(this.rival.mesh.position, 0.5);
+    const chase = p.clone().addScaledVector(f, -8.5).addScaledVector(r, 1.8);
+    chase.y += 2.2;
+    const chaseLook = p.clone().addScaledVector(f, 7);
+    chaseLook.y += 1;
+    const k = S.t / S.dur;
+    const pos = new THREE.Vector3();
+    const look = mid.clone();
+    look.y += 0.8;
+    if (S.kind === 0) {
+      const a = -1.3 + 2.6 * k;
+      pos.copy(mid).addScaledVector(f, -Math.cos(a) * 15).addScaledVector(r, Math.sin(a) * 15);
+      pos.y += 3.5 + 2 * Math.sin(k * Math.PI);
+    } else if (S.kind === 1) {
+      pos.copy(mid).addScaledVector(f, -9 + 4 * k);
+      pos.y += 5 + 15 * smooth(0, 0.6, k);
+    } else {
+      pos.copy(mid).addScaledVector(r, (this.rival.lane > 0 ? 1 : -1) * 15).addScaledVector(f, 6 - 10 * k);
+      pos.y += 2.4;
+      look.addScaledVector(f, 4);
+    }
+    camera.position.copy(chase.lerp(pos, w));
+    camera.lookAt(chaseLook.lerp(look, w));
+    camera.fov += (58 + 6 * w - camera.fov) * Math.min(1, dt * 3);
+    return S.t < S.dur;
+  }
+
+  /** Whether a cinematic shot should run this frame. */
+  wantsShot(dt, vehicle) {
+    if (this.phase !== 'racing' && !(this.cine && this.cine.t < this.cine.dur)) return false;
+    if (this.cine && this.cine.t < this.cine.dur) return true;
+    this.nextShot = (this.nextShot ?? 7) - dt;
+    const close = vehicle.pos.distanceTo(this.rival.mesh.position) < 40;
+    if (this.nextShot > 0 || !close || vehicle.airborne) return false;
+    this.cine = { t: 0, dur: 5, kind: this.shotKind = ((this.shotKind ?? -1) + 1) % 3 };
+    this.nextShot = 10 + Math.random() * 4;
+    return true;
+  }
+
   /** Through the gate: onto the line, the rival beside you, lamps dark. */
   enter(vehicle) {
     const T = this.track;
@@ -332,6 +492,8 @@ export class Race {
     this.playerLastT = T.wrap(-14);
     this.lap = 0;
     this.result = null;
+    this.cine = null;
+    this.nextShot = 8;
     this.set.lamps.forEach((l) => l.material.color.setHex(0x1a0606));
     this.poseRival();
   }
@@ -441,7 +603,14 @@ export class Race {
     } else if (this.phase === 'finished' && this.t > 6) {
       out.done = true;
     }
-    for (const g of this.set.gates) g.children.forEach((m) => { m.material.opacity = 0.4 + 0.2 * Math.sin(this.t * 2 + g.position.x); });
+    for (const g of this.set.gates) if (g.isMesh) g.rotation.z += dt * 0.4;
+    for (const sp of this.rival.mesh.userData.glints) {
+      // a star skates round each rim and flares now and then
+      const a = this.t * (6 + R.v * 0.6) + sp.userData.phase;
+      sp.position.set(sp.userData.x, 0.36 + Math.sin(a) * 0.3, sp.userData.z + Math.cos(a) * 0.3);
+      const flare = Math.max(0, Math.sin(a * 0.37 + sp.userData.phase)) ** 8;
+      sp.scale.setScalar(0.25 + flare * 1.3);
+    }
     return out;
   }
 }

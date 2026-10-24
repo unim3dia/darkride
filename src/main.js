@@ -115,6 +115,8 @@ function warpSpots() {
 let WARPS = null;
 let lastWarp = -1;
 
+const raceShot = (camera, v, dt) => { if (!race.shot(camera, v, dt)) rig.cine = null; };
+
 /** The circuit: through the gate, the countdown, laps, the result, and home. */
 function raceFrame(dt) {
   const rr = race.update(dt, vehicle);
@@ -130,6 +132,10 @@ function raceFrame(dt) {
   if (rr.card) screens.showCard(rr.card[0], rr.card[1]);
   if (rr.bump) { audio.bump(4 * rr.bump); rig.shake(0.15 * rr.bump); }
   if (rr.finish) audio.tone(rr.finish === 'win' ? 587 : 196, 0.14, 1.6, { wet: 0.7 });
+  // the race's own camera moves, only from the chase view and only if nothing else holds the camera
+  const ours = rig.cine === raceShot;
+  if ((ours || !rig.cine) && rig.view === 0 && race.wantsShot(dt, vehicle)) rig.cine = raceShot;
+  else if (ours) rig.cine = null;
   if (rr.done) {
     race.leave(vehicle);
     flash();
@@ -591,7 +597,7 @@ function tick(now) {
 
   audio.frame({
     speed: vehicle.speed, throttle: drive.throttle, charge: Math.max(vehicle.charge, vehicle.pumping * 0.35), charging: vehicle.charging || vehicle.pumping > 0,
-    scrape: ev.scrape, lampNear: ambient.lampNear, rain: rainHere, airborne: vehicle.airborne, view: rig.name, train: trainNear,
+    scrape: ev.scrape, lampNear: ambient.lampNear, rain: state.mode === 'title' ? 0 : rainHere, airborne: vehicle.airborne, view: rig.name, train: trainNear,
   });
 
   state.aberration *= Math.exp(-raw * 4);

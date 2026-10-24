@@ -87,42 +87,6 @@ function signMat(tex) {
   return new THREE.MeshBasicMaterial({ map: tex, color: new THREE.Color(1.5, 1.5, 1.5), fog: false, toneMapped: false });
 }
 
-/** Merge keeping uv (the painted arrows need it). */
-function mergeUV(geos) {
-  const pos = [];
-  const uv = [];
-  for (const g of geos) {
-    const n = g.index ? g.toNonIndexed() : g;
-    pos.push(...n.attributes.position.array);
-    uv.push(...n.attributes.uv.array);
-  }
-  const out = new THREE.BufferGeometry();
-  out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  out.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  return out;
-}
-
-let arrowMat = null;
-function laneArrowMat() {
-  if (arrowMat) return arrowMat;
-  const c = document.createElement('canvas');
-  c.width = 128;
-  c.height = 256;
-  const g = c.getContext('2d');
-  g.fillStyle = '#fff';
-  g.beginPath();
-  g.moveTo(64, 8); g.lineTo(120, 92); g.lineTo(84, 92); g.lineTo(84, 248); g.lineTo(44, 248); g.lineTo(44, 92); g.lineTo(8, 92);
-  g.closePath();
-  g.fill();
-  const img = g.getImageData(0, 0, 128, 256);
-  for (let i = 3; i < img.data.length; i += 4) if (Math.random() < 0.25) img.data[i] *= Math.random();
-  g.putImageData(img, 0, 0);
-  const t = new THREE.CanvasTexture(c);
-  arrowMat = new THREE.MeshBasicMaterial({ map: t, color: new THREE.Color(0.55, 0.57, 0.58), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 });
-  SHARED_MATS.add(arrowMat);
-  return arrowMat;
-}
-
 export class Forks {
   constructor(scene) {
     this.scene = scene;
@@ -223,15 +187,6 @@ export class Forks {
       m.rotation.y = Math.atan2(-A.tx, -A.tz) - sp.side * 0.12; // turned a touch toward the driver
       this.group.add(m);
     }
-    // and arrows painted in the lane that's about to leave
-    const arrows = [];
-    for (let k = 0; k < 5; k++) {
-      const A = sample(sp.sA - 40 - k * 32);
-      const g = new THREE.PlaneGeometry(2.2, 5.2).rotateX(-Math.PI / 2).rotateY(-A.heading + sp.side * 0.35);
-      arrows.push(g.translate(A.x + A.nx * sp.side * 3.9, A.y + 0.07, A.z + A.nz * sp.side * 3.9));
-    }
-    const arrowGeo = mergeUV(arrows);
-    this.group.add(new THREE.Mesh(arrowGeo, laneArrowMat()));
     this.group.add(new THREE.Mesh(merge(post), MATS.steel));
   }
 
