@@ -282,7 +282,7 @@ export class Forks {
     if (h && h.spur instanceof Detour) {
       detour = h.spur;
       cave = detour.caveWeight(h.t);
-    } else if (h) {
+    } else if (h && this.spurs.includes(h.spur)) {
       const i = this.spurs.indexOf(h.spur);
       const u = h.spur.sample(h.t).u;
       const sep = h.spur.uSep;

@@ -10,7 +10,7 @@ import { Watchers } from './world/watchers.js';
 import { Ambient } from './world/ambient.js';
 import { Mist } from './world/mist.js';
 import { FogLayers } from './world/fogLayers.js';
-import { gapAt, zoneIndexAt, sample } from './world/track.js';
+import { gapAt, zoneIndexAt, sample, rng } from './world/track.js';
 import { District } from './world/district.js';
 import { Narrows } from './world/narrows.js';
 import { LOOP_LEN } from './world/track.js';
@@ -18,6 +18,7 @@ import { Answerers } from './world/answerers.js';
 import { Trail } from './world/trail.js';
 import { Forks } from './world/forks.js';
 import { DriveInMovie, LOT } from './world/driveIn.js';
+import { Race, RACE_PALETTE } from './world/race.js';
 import { collidersFrom, updateBodies } from './world/bodies.js';
 import { Vehicle } from './player/vehicle.js';
 import { CarView } from './player/carView.js';
@@ -77,6 +78,7 @@ rig.clip = (from, to) => {
 const CAVE_PALETTE = { fog: 0x030303, skyTop: 0x000000, skyHorizon: 0x030303, glow: 0x060606, light: 0.025, exposure: 0.72, fogMul: 1.5, grain: 1.4, rain: 0 };
 
 let driveInTrail = null;
+let raceTrail = null;
 
 // ---------------------------------------------------------------- R I D E: somewhere else
 
@@ -113,7 +115,32 @@ function warpSpots() {
 let WARPS = null;
 let lastWarp = -1;
 
+/** The circuit: through the gate, the countdown, laps, the result, and home. */
+function raceFrame(dt) {
+  const rr = race.update(dt, vehicle);
+  const flash = () => { state.aberration = 1.4; rig.offset = undefined; rig.reach = 1; state.fall = null; };
+  if (rr.enter) {
+    race.enter(vehicle);
+    flash();
+    audio.launch(0.9);
+    screens.showCard('THE CIRCUIT', 'three laps · the rival on your right');
+  }
+  if (rr.lamp) audio.tone(392, 0.12, 0.35, { wet: 0.4 });
+  if (rr.go) audio.tone(784, 0.16, 0.8, { wet: 0.5 });
+  if (rr.card) screens.showCard(rr.card[0], rr.card[1]);
+  if (rr.bump) { audio.bump(4 * rr.bump); rig.shake(0.15 * rr.bump); }
+  if (rr.finish) audio.tone(rr.finish === 'win' ? 587 : 196, 0.14, 1.6, { wet: 0.7 });
+  if (rr.done) {
+    race.leave(vehicle);
+    flash();
+    state.zone = -1;
+    warmStart(chunks, vehicle.s);
+  }
+  return rr;
+}
+
 function warp() {
+  if (race.active) race.phase = 'idle', race.set.group.visible = false;
   WARPS = WARPS || warpSpots();
   let i = Math.floor(Math.random() * WARPS.length);
   if (i === lastWarp) i = (i + 1 + Math.floor(Math.random() * (WARPS.length - 1))) % WARPS.length;
@@ -232,6 +259,27 @@ const movie = new DriveInMovie(district, district.driveIn.booth);
   }
   driveInTrail = new Trail(scene, pts, { persistent: true });
 }
+// in the Narrows: a sign calls you left, down a street to a gate of light, and the circuit
+const RACE_U = -133;
+const race = new Race(scene, {
+  pos: narrows.toWorld(RACE_U, -100, 0),
+  yaw: narrows.faceYaw(0, 1),
+  back: (v) => { const p = narrows.toWorld(RACE_U, -86, 0); v.placeAt(p.x, 0, p.z, -narrows.yawToward(0, 1), 8); },
+}, narrows.s0, rng(5150));
+vehicle.spurs.push(race.track);
+{
+  const u = -162;
+  narrows.signAt('RACE', '← tonight · three laps', narrows.toWorld(u, narrows.roadV(u) - (ROAD.HALF_WIDTH + 5), 6), narrows.faceYaw(-1, -0.45), [0xe8f0ff, 0x7fd8ff]);
+  const route = [[-152, narrows.roadV(-152) - 5], [RACE_U, narrows.roadV(RACE_U) - 14], [RACE_U, -94]];
+  const pts = [];
+  for (let i = 0; i < route.length - 1; i++) {
+    const [a, b] = [route[i], route[i + 1]];
+    const n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 6);
+    for (let k = 0; k < n; k++) pts.push(narrows.toWorld(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n, 0.04));
+  }
+  raceTrail = new Trail(scene, pts, { persistent: true });
+}
+const ETHER_CHOIR = forks.pockets[forks.spurs.findIndex((sp) => sp.kind === 'ether')].choir;
 warmStart(chunks, vehicle.s);
 rig.view = 1; // the title shot looks back at the driver
 
@@ -276,6 +324,16 @@ function frameEvents(ev) {
   if (ev.launch) {
     audio.launch(ev.launch.charge);
     rig.fovKick = 4 * ev.launch.charge;
+    // on the circuit a jump is a turbo: the switches throw you forward as well as up
+    if (race.phase === 'racing') {
+      const f = vehicle.forward;
+      const kick = 12 + 18 * ev.launch.charge;
+      vehicle.vel.x += f.x * kick;
+      vehicle.vel.z += f.z * kick;
+      rig.fovKick = 9 + 8 * ev.launch.charge;
+      state.aberration = Math.max(state.aberration, 0.5 + ev.launch.charge * 0.6);
+      audio.tone(220, 0.08, 0.6, { type: 'sawtooth', to: 660, wet: 0.4 });
+    }
     particles.spray(vehicle.pos.x, vehicle.pos.y, vehicle.pos.z, 10, 2.5);
   }
   if (ev.pop) audio.launch(0.32);
@@ -447,8 +505,10 @@ function tick(now) {
   if (input.view && state.mode === 'ride') rig.cycle();
   if (input.warp && state.mode === 'ride') warp();
 
-  const riding = state.mode === 'ride' && !state.fall;
+  const rr = state.mode === 'ride' ? raceFrame(dt) : {};
+  const riding = state.mode === 'ride' && !state.fall && !rr.hold;
   const drive = riding ? input : { throttle: 0, brake: 0, steer: 0, hopHeld: false, hopPressed: false };
+  if (rr.hold) vehicle.vel.set(0, 0, 0);
   const ev = physics(dt, drive);
   frameEvents(ev);
 
@@ -463,7 +523,11 @@ function tick(now) {
   const pk = forks.update(dt, state.time, vehicle, camera);
   ambient.pocket = pk.pocket ? { weight: pk.weight, palette: pk.pocket.palette }
     : pk.cave > 0.01 ? { weight: pk.cave, palette: CAVE_PALETTE } : null;
-  audio.choir(pk.pocket ? pk.pocket.choir : null, pk.weight);
+  if (race.fade > 0.001) {
+    // on the circuit: its own pale air and a choir under the engines
+    ambient.pocket = { weight: race.fade, palette: RACE_PALETTE };
+    audio.choir(ETHER_CHOIR, race.fade * 0.7);
+  } else audio.choir(pk.pocket ? pk.pocket.choir : null, pk.weight);
   if (pk.pocket && pk.weight > 0.55 && state.pocketShown !== pk.pocket) {
     state.pocketShown = pk.pocket;
     screens.showCard(pk.pocket.name, pk.pocket.sub);
@@ -483,7 +547,7 @@ function tick(now) {
   catchUniforms.uSrc.value.copy(vehicle.pos).addScaledVector(catchUniforms.uDir.value, 2.9).y += 0.8;
 
   const z = zoneIndexAt(vehicle.s);
-  if (z !== state.zone && state.mode === 'ride' && !pk.pocket && pk.cave < 0.01) {
+  if (z !== state.zone && state.mode === 'ride' && !pk.pocket && pk.cave < 0.01 && !race.active) {
     state.zone = z;
     screens.showZone(z);
     audio.setZone(z);
@@ -503,6 +567,7 @@ function tick(now) {
   mist.update(dt, vehicle, camera, scene.fog.color, ambient.flash, inTown);
   trail.update(dt, state.time, vehicle);
   driveInTrail.update(dt, state.time, vehicle);
+  raceTrail.update(dt, state.time, vehicle);
   const film = movie.update(dt, renderer, vehicle.pos);
   audio.movie(film.level, film.roar, film.hit);
   fogLayers.update(state.time, camera, vehicle.groundY, scene.fog.color, ambient.fogThick, inTown);
@@ -550,7 +615,7 @@ function tick(now) {
 }
 
 // expose a tiny handle for debugging in the console
-window.__darkride = { vehicle, state, chunks, rig, ROAD, particles, watchers, carView, scene, renderer, district, narrows, places, answerers, emitPulse, ambient, forks, audio, warmStart };
+window.__darkride = { vehicle, state, chunks, rig, ROAD, particles, watchers, carView, scene, renderer, district, narrows, places, answerers, emitPulse, ambient, forks, audio, warmStart, race, movie };
 if (TEST) import('./core/testkit.js').then((m) => m.installTestKit(window.__darkride));
 if (new URLSearchParams(location.search).has('reel')) import('./core/reel.js').then((m) => m.installReel(window.__darkride));
 schedule(tick);
