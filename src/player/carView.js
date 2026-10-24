@@ -82,6 +82,40 @@ export class CarView {
     });
   }
 
+  /**
+   * The red wash the tail lamps throw on the road has moods: it breathes, it
+   * flickers like a tired bulb, it eases on, it fades out and stays dark a while.
+   * Each mood lasts a few seconds, then it drifts into another. Returns 0..1.
+   */
+  tailMood(dt) {
+    const M = this.mood || (this.mood = { kind: 'breathe', t: 0, dur: 6, k: 1, period: 4.5, hold: 0 });
+    M.t += dt;
+    if (M.t > M.dur) {
+      const moods = ['breathe', 'breathe', 'flicker', 'rise', 'fade', 'dark', 'steady'];
+      let next = moods[Math.floor(Math.random() * moods.length)];
+      if (next === M.kind) next = 'breathe';
+      Object.assign(M, { kind: next, t: 0, dur: 3.5 + Math.random() * 6, period: 3 + Math.random() * 4, from: M.k });
+    }
+    let target;
+    let rate = 3;
+    switch (M.kind) {
+      case 'breathe': target = 0.5 - 0.5 * Math.cos((M.t / M.period) * Math.PI * 2 + Math.PI); rate = 6; break;
+      case 'flicker':
+        // a loose connection: mostly on, dropping out in stutters
+        M.hold -= dt;
+        if (M.hold <= 0) { M.flick = Math.random() < 0.35 ? 0.04 : 0.55 + Math.random() * 0.45; M.hold = 0.03 + Math.random() * 0.12; }
+        target = M.flick;
+        rate = 40;
+        break;
+      case 'rise': target = Math.min(1, M.t / 3); rate = 4; break;
+      case 'fade': target = Math.max(0, 1 - M.t / 3); rate = 4; break;
+      case 'dark': target = 0; rate = 2; break;
+      default: target = 0.85;
+    }
+    M.k += (target - M.k) * Math.min(1, dt * rate);
+    return M.k;
+  }
+
   /** 0 right after a wipe, rising toward 1 as rain builds back up. */
   glassWetness(time) {
     return Math.min(1, (time - this.lastWipe) / 2.4);
@@ -134,7 +168,7 @@ export class CarView {
     this.beam.intensity = 22 * (0.78 + 0.22 * flick);
     this.beams[0].material.uniforms.uStrength.value = 0.16 * flick;
     this.beams[1].material.uniforms.uStrength.value = 0.16;
-    this.tailGlow.material.opacity = 0.12 * THREE.MathUtils.clamp(1 - Math.abs(v.pos.y - v.groundY) / 2.5, 0, 1);
+    this.tailGlow.material.opacity = 0.12 * this.tailMood(dt) * THREE.MathUtils.clamp(1 - Math.abs(v.pos.y - v.groundY) / 2.5, 0, 1);
 
     // wipers: a sweep every few seconds; returns how clear the glass is (0 = just wiped)
     // wipers only run when it's actually raining; they park otherwise
