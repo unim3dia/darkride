@@ -68,7 +68,7 @@ export class Stampede {
     // the lanes they run in: the outer lanes of the deck, and out on the air either side
     const slots = [-5.2, 5.2, -12, 12, -19, 19, -27, 27, -5.4, 5.4, -14, 14, -23, 23, -33, 33];
     slots.forEach((d, i) => {
-      const big = Math.abs(d) > 9 ? i % 2 === 0 : i % 3 === 0;
+      const big = Math.abs(d) > 9 && i % 2 === 0; // the giants keep to the air past the barriers
       const a = big ? elephant() : bison();
       const echoes = [echoOf(a), echoOf(a)];
       this.group.add(a.g, ...echoes.map((e) => e.g));

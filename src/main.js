@@ -19,7 +19,7 @@ import { Trail } from './world/trail.js';
 import { Forks } from './world/forks.js';
 import { DriveInMovie, LOT } from './world/driveIn.js';
 import { Race, RACE_PALETTE } from './world/race.js';
-import { Stampede } from './world/stampede.js';
+import { Stampede, STAMPEDE } from './world/stampede.js';
 import { collidersFrom, updateBodies } from './world/bodies.js';
 import { Vehicle } from './player/vehicle.js';
 import { CarView } from './player/carView.js';
@@ -111,6 +111,8 @@ function warpSpots() {
   // the drive-in, nosed toward the screen; the middle of the Narrows
   spots.push({ name: 'drive-in', go: () => { const p = district.toWorld(LOT.u1 - 30, LOT.aisleV); vehicle.placeAt(p.x, 0, p.z, -district.yawToward(-1, 0), 4); } });
   spots.push({ name: 'narrows', go: () => vehicle.reset(narrows.s0, 0, 0, 16) });
+  spots.push({ name: 'stampede', go: () => vehicle.reset(STAMPEDE.a + 170, -1, 0, 30) });
+  spots.push({ name: 'race', go: () => { const p = narrows.toWorld(RACE_U, -60, 0); vehicle.placeAt(p.x, 0, p.z, -narrows.yawToward(0, -1), 10); } });
   return spots;
 }
 let WARPS = null;
@@ -146,13 +148,33 @@ function raceFrame(dt) {
   return rr;
 }
 
-function warp() {
+/** R-I-D-E: the switches throw the car up out of the world, a white flash, and you come down somewhere else. */
+function warp(name) {
+  if (state.warping) return;
+  state.warping = { t: 0, name };
+  vehicle.vel.y = 17;
+  vehicle.airborne = true;
+  vehicle.airTime = 0;
+  rig.shake(0.35);
+  audio.launch(1);
+}
+
+function landWarp() {
   if (race.active) race.phase = 'idle', race.set.group.visible = false;
   WARPS = WARPS || warpSpots();
-  let i = Math.floor(Math.random() * WARPS.length);
-  if (i === lastWarp) i = (i + 1 + Math.floor(Math.random() * (WARPS.length - 1))) % WARPS.length;
+  const want = (state.warping.name || '').toLowerCase();
+  let i = want ? WARPS.findIndex((w) => w.name.toLowerCase().includes(want)) : -1;
+  if (i < 0) {
+    i = Math.floor(Math.random() * WARPS.length);
+    if (i === lastWarp) i = (i + 1 + Math.floor(Math.random() * (WARPS.length - 1))) % WARPS.length;
+  }
   lastWarp = i;
   WARPS[i].go();
+  // drop in from above
+  vehicle.pos.y += 6;
+  vehicle.vel.y = 0;
+  vehicle.airborne = true;
+  vehicle.airTime = 0;
   state.lastWarp = WARPS[i].name;
   state.fall = null;
   state.zone = -1;
@@ -162,9 +184,14 @@ function warp() {
   rig.reach = 1;
   warmStart(chunks, vehicle.s);
   state.aberration = 1.2;
-  rig.shake(0.4);
-  audio.launch(0.9);
+  flashEl.style.transition = 'none';
+  flashEl.style.opacity = '0.85';
+  requestAnimationFrame(() => { flashEl.style.transition = 'opacity 0.9s ease-out'; flashEl.style.opacity = '0'; });
+  state.warping = null;
 }
+
+const flashEl = Object.assign(document.createElement('div'), { className: 'warp-flash' });
+document.body.appendChild(flashEl);
 
 const state = {
   mode: 'title',
@@ -307,6 +334,9 @@ function startRide() {
   state.mode = 'ride';
   audio.menu(false);
   screens.begin();
+  // ?at=stampede (or race, drive-in, narrows, dust, ether, …) starts you there
+  const at = new URLSearchParams(location.search).get('at');
+  if (at) setTimeout(() => { state.warping = { t: 1, name: at }; landWarp(); }, 400);
   rig.view = 0;
   rig.blend = 0;
 }
@@ -532,6 +562,7 @@ function tick(now) {
   if (input.mute) audio.toggleMute();
   if (input.view && state.mode === 'ride') rig.cycle();
   if (input.warp && state.mode === 'ride') warp();
+  if (state.warping && (state.warping.t += raw) > 0.45) landWarp();
 
   const rr = state.mode === 'ride' ? raceFrame(dt) : {};
   const riding = state.mode === 'ride' && !state.fall && !rr.hold;

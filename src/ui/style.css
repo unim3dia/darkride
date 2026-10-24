@@ -232,3 +232,6 @@ body.touch .hint { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .start { animation: none; opacity: 0.6; }
 }
+
+/* the white-out when R-I-D-E throws you somewhere else */
+.warp-flash { position: fixed; inset: 0; background: #f2efe8; opacity: 0; pointer-events: none; z-index: 40; }

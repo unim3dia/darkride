@@ -11,8 +11,13 @@ const KEYS = {
   right: ['KeyD', 'ArrowRight'],
 };
 
+// the last few keys struck, for spelling R-I-D-E
+const typed = [];
+
 window.addEventListener('keydown', (e) => {
   if (e.repeat) return;
+  typed.push({ code: e.code, t: performance.now() });
+  if (typed.length > 4) typed.shift();
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
   held.add(e.code);
   pressed.add(e.code);
@@ -63,8 +68,11 @@ export function readInput() {
   }
 
   // hold R, I, D and E together: the ride takes you somewhere else (once per press)
+  // (or type it: many keyboards can't hold four letters down at once)
   const ride = ['KeyR', 'KeyI', 'KeyD', 'KeyE'].every((c) => held.has(c));
-  const warp = ride && !rideLatch;
+  const spelled = typed.length === 4 && typed.map((k) => k.code).join() === 'KeyR,KeyI,KeyD,KeyE' && performance.now() - typed[0].t < 2500;
+  if (spelled) typed.length = 0;
+  const warp = (ride && !rideLatch) || spelled;
   rideLatch = ride;
 
   const out = {
