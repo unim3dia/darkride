@@ -19,7 +19,7 @@ import { Trail } from './world/trail.js';
 import { Forks } from './world/forks.js';
 import { DriveInMovie, LOT } from './world/driveIn.js';
 import { Race, RACE_PALETTE } from './world/race.js';
-import { Stampede, STAMPEDE, buildHerdRoad, herdRoadMesh } from './world/stampede.js';
+import { Stampede, STAMPEDE, buildHerdRoad, herdRoadMesh, herdHalfWidth } from './world/stampede.js';
 import { collidersFrom, updateBodies } from './world/bodies.js';
 import { Vehicle } from './player/vehicle.js';
 import { CarView } from './player/carView.js';
@@ -66,7 +66,7 @@ for (const p of places) chunks.extras.push(p.chunk);
 const forks = new Forks(scene);
 vehicle.spurs = [...forks.spurs, ...forks.detours];
 for (const c of forks.chunks) chunks.extras.push(c);
-chunks.avoid = (x, z) => !!placeAt(x, z, 40) || forks.near(x, z);
+chunks.avoid = (x, z) => !!placeAt(x, z, 40) || forks.near(x, z) || (herdRoadRef && herdNear(x, z));
 vehicle.street = { contains: (x, z, margin = 0) => !!placeAt(x, z, margin) };
 rig.clip = (from, to) => {
   const safe = (placeAt(to.x, to.z, 30) || district).clipCamera(from, to);
@@ -111,7 +111,7 @@ function warpSpots() {
   // the drive-in, nosed toward the screen; the middle of the Narrows
   spots.push({ name: 'drive-in', go: () => { const p = district.toWorld(LOT.u1 - 30, LOT.aisleV); vehicle.placeAt(p.x, 0, p.z, -district.yawToward(-1, 0), 4); } });
   spots.push({ name: 'narrows', go: () => vehicle.reset(narrows.s0, 0, 0, 16) });
-  spots.push({ name: 'stampede', go: () => enterHerd(24) });
+  spots.push({ name: 'stampede', go: () => { const p = herdRoad.sample(herdRoad.N * 0.2); vehicle.placeAt(p.x, p.y + 0.4, p.z, p.heading, 24); } });
   spots.push({ name: 'race', go: () => { const p = narrows.toWorld(RACE_U, -60, 0); vehicle.placeAt(p.x, 0, p.z, -narrows.yawToward(0, -1), 10); } });
   return spots;
 }
@@ -314,53 +314,28 @@ vehicle.spurs.push(race.track);
   raceTrail = new Trail(scene, pts, { persistent: true });
 }
 const stampede = new Stampede(scene);
+let herdRoadRef = null;
+function herdNear(x, z) {
+  const b = herdRoadRef.box;
+  if (x < b.minX - 200 || x > b.maxX + 200 || z < b.minZ - 200 || z > b.maxZ + 200) return false;
+  return herdRoadRef.distance(x, z) < 180;
+}
 // the herd lives in its own country: a gate of light across the highway takes you there
-const herdRoad = buildHerdRoad(STAMPEDE.a);
+const herdRoad = buildHerdRoad();
 scene.add(herdRoadMesh(herdRoad));
+stampede.plant(herdRoad, scene);
 vehicle.spurs.push(herdRoad);
-const herdGate = (() => {
-  const S = sample(STAMPEDE.a);
-  const g = new THREE.Group();
-  const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.9, 1.3, 1.8), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
-  const veil = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.18, 0.26, 0.36), transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
-  const W = ROAD.HALF_WIDTH * 2 + 3;
-  const H = 14;
-  for (const [sx, sy, px, py] of [[0.35, H, -W / 2, H / 2], [0.35, H, W / 2, H / 2], [W, 0.35, 0, H]]) {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, 0.35), mat);
-    m.position.set(px, py, 0);
-    g.add(m);
-  }
-  const sheet = new THREE.Mesh(new THREE.PlaneGeometry(W, H), veil);
-  sheet.position.y = H / 2;
-  g.add(sheet);
-  g.position.set(S.x, S.y, S.z);
-  g.rotation.y = -S.heading;
-  scene.add(g);
-  for (const dist of [600, 300]) {
+herdRoadRef = herdRoad;
+{
+  // the way in looks like any other exit: signs counting down, the right lane peeling off
+  for (const dist of [600, 300, 120]) {
     const A = sample(STAMPEDE.a - dist);
     const v = new THREE.Vector3(A.x + A.nx * (ROAD.HALF_WIDTH + 4), A.y + 5.4, A.z + A.nz * (ROAD.HALF_WIDTH + 4));
-    district.signAt('STAMPEDE', `${dist} m · through the light`, v, Math.atan2(-A.tx, -A.tz), [0xbfe2ff, 0x7fa8d8]);
+    district.signAt('STAMPEDE', `${dist} m · keep right`, v, Math.atan2(-A.tx, -A.tz), [0xbfe2ff, 0x7fa8d8]);
   }
-  return { veil };
-})();
-function enterHerd(speed) {
-  const p = herdRoad.sample(4);
-  vehicle.placeAt(p.x, p.y + 0.4, p.z, p.heading, speed);
-  rig.offset = undefined; rig.reach = 1;
-  state.aberration = 1.4;
-  state.fall = null;
-  audio.launch(0.9);
-}
-function leaveHerd() {
-  const speed = Math.max(18, vehicle.speed);
-  vehicle.reset(STAMPEDE.b, 0, 0, speed);
-  rig.offset = undefined; rig.reach = 1;
-  state.aberration = 1.2;
-  state.zone = -1;
-  warmStart(chunks, vehicle.s);
 }
 // the herd's air: cold blue fog the animals come apart in
-const DUST_PALETTE = { fog: 0x56687e, skyTop: 0x1a2430, skyHorizon: 0x6a7e94, glow: 0x7c92a8, light: 0.42, exposure: 1.05, fogMul: 1.05, grain: 1.7, rain: 0.8 };
+const DUST_PALETTE = { fog: 0x6f8a92, skyTop: 0x22303e, skyHorizon: 0x8aa6b0, glow: 0xa6c2cc, light: 0.55, exposure: 1.12, fogMul: 0.95, grain: 1.7, rain: 0.6 };
 const ETHER_CHOIR = forks.pockets[forks.spurs.findIndex((sp) => sp.kind === 'ether')].choir;
 warmStart(chunks, vehicle.s);
 rig.view = 1; // the title shot looks back at the driver
@@ -633,27 +608,21 @@ function tick(now) {
     audio.choir(ETHER_CHOIR, race.fade * 0.7);
   } else audio.choir(pk.pocket ? pk.pocket.choir : null, pk.weight);
   // the stampede: the herd runs with you, and leans on you if you drift into it
-  // through the gate, along the bridge, and back to the highway at its far end
-  herdGate.veil.opacity = 0.5 + 0.25 * Math.sin(state.time * 3);
-  if (state.mode === 'ride' && !vehicle.spurHit && vehicle.onRoad && Math.abs(((vehicle.s - STAMPEDE.a) % LOOP_LEN + LOOP_LEN) % LOOP_LEN) < 3) {
-    const S = sample(vehicle.s);
-    if (vehicle.vel.x * S.tx + vehicle.vel.z * S.tz > 2) enterHerd(Math.max(20, vehicle.speed));
-  }
   const onHerd = vehicle.spurHit && vehicle.spurHit.spur === herdRoad ? vehicle.spurHit : null;
-  if (onHerd && onHerd.t > herdRoad.N - 12) leaveHerd();
   const herd = stampede.update(dt, state.time, vehicle, herdRoad);
   rig.herd = herd.w;
   if (herd.w > 0.01 && !ambient.pocket) ambient.pocket = { weight: Math.min(1, herd.w * 1.2), palette: DUST_PALETTE };
   // the bridge is a strip: lean on its edge and the dark leans back
-  if (onHerd && Math.abs(onHerd.d) > 2.4 && !vehicle.airborne) {
+  const edge = onHerd ? herdHalfWidth(herdRoad.sample(onHerd.t).u) - 1.2 : 0;
+  if (onHerd && onHerd.t > herdRoad.tSepA && onHerd.t < herdRoad.tSepB && Math.abs(onHerd.d) > edge && !vehicle.airborne) {
     const side = Math.sign(onHerd.d);
-    const over = Math.abs(onHerd.d) - 2.4;
+    const over = Math.abs(onHerd.d) - edge;
     vehicle.pos.x -= onHerd.nx * side * over * Math.min(1, dt * 12);
     vehicle.pos.z -= onHerd.nz * side * over * Math.min(1, dt * 12);
     const into = (vehicle.vel.x * onHerd.nx + vehicle.vel.z * onHerd.nz) * side;
     if (into > 0) { vehicle.vel.x -= onHerd.nx * side * into; vehicle.vel.z -= onHerd.nz * side * into; }
   }
-  audio.stampede(herd.w, herd.near, herd.intensity || 0);
+  audio.stampede(herd.w, herd.near, herd.intensity || 0, herd.score ? herd.score.vortex : 0);
   if (herd.w > 0.5 && !state.herdShown) { state.herdShown = true; screens.showCard('THE STAMPEDE', 'they were running long before the road'); }
   if (herd.w < 0.05) state.herdShown = false;
   if (pk.pocket && pk.weight > 0.55 && state.pocketShown !== pk.pocket) {
@@ -675,7 +644,7 @@ function tick(now) {
   catchUniforms.uSrc.value.copy(vehicle.pos).addScaledVector(catchUniforms.uDir.value, 2.9).y += 0.8;
 
   const z = zoneIndexAt(vehicle.s);
-  if (z !== state.zone && state.mode === 'ride' && !pk.pocket && pk.cave < 0.01 && !race.active) {
+  if (z !== state.zone && state.mode === 'ride' && !pk.pocket && pk.cave < 0.01 && !race.active && stampede.w < 0.05) {
     state.zone = z;
     screens.showZone(z);
     audio.setZone(z);

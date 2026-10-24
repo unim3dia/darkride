@@ -407,7 +407,7 @@ export class Audio {
    * fog; by the end a ground-shaking roar, a gallop like rolling thunder, a
    * rising drone underneath, and trumpets calling over it.
    */
-  stampede(w, near, intensity = 1) {
+  stampede(w, near, intensity = 1, vortex = 0) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
     const I = intensity;
@@ -430,6 +430,22 @@ export class Audio {
     this.herdDust.gain.setTargetAtTime(w * (0.006 + I * 0.03), t, 0.4);
     this.herdDroneGain.gain.setTargetAtTime(w * I * I * 0.06, t, 0.6);
     this.herdDrone.forEach((o, i) => o.frequency.setTargetAtTime(36.71 * (i ? 1.5 : 1) * (1 + I * 0.5), t, 1.2));
+    // the vortex sings: 432/8 Hz and its golden ratios, a chord that grows the way shells grow
+    if (!this.phiChord) {
+      const PHI = (1 + Math.sqrt(5)) / 2;
+      this.phiGain = this.gain(0);
+      this.phiChord = [1, PHI, PHI * PHI, 2 * PHI].map((r) => {
+        const o = this.ctx.createOscillator();
+        o.type = 'sine';
+        o.frequency.value = 54 * r;
+        o.connect(this.phiGain);
+        o.start();
+        return o;
+      });
+      this.phiGain.connect(this.master);
+      this.phiGain.connect(this.verbIn);
+    }
+    this.phiGain.gain.setTargetAtTime(w * vortex * 0.035, t, 1.0);
     if (w < 0.05) return;
     if (t > this.nextHoof) {
       this.tone(48 + Math.random() * 20 + (1 - I) * 60, (0.03 + I * 0.16 + near * 0.08 * I) * w, 0.14, { to: 32, wet: 0.15 + (1 - I) * 0.5 });

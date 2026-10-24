@@ -281,9 +281,22 @@ export const DETOUR_PLANS = DETOUR_DEFS.map((def) => {
   return { ...def, fork: f, sBranch: sB, dB, theta0, sL, dL, sC0, sC1, sV, sM0, sEnd, open: [sM0 + 0.4 * DETOUR.MERGE, sEnd + 3] };
 });
 
+/**
+ * The herd's road: far round the ring from the start, it peels off to the right
+ * like any off-ramp, bows out across the dark, and merges back further on.
+ */
+export const HERD = (() => {
+  const f = { at: 0.68, side: 1, len: 1250, D: 300, lift: -4, kind: 'herd' };
+  const sA = f.at * LOOP_LEN;
+  const uSep = Math.asin(Math.sqrt((2 * (ROAD.HALF_WIDTH + 0.8)) / f.D)) / Math.PI;
+  return { ...f, sA, sB: sA + f.len, uSep };
+})();
+
 /** Stretches where the highway's barrier is open on `side`, beyond the forks themselves. */
 function extraOpenings(side) {
-  return side < 0 ? DETOUR_PLANS.map((p) => p.open) : [];
+  if (side < 0) return DETOUR_PLANS.map((p) => p.open);
+  const lap = HERD.uSep * HERD.len;
+  return [[HERD.sA - 3, HERD.sA + lap], [HERD.sB - lap, HERD.sB + 3]];
 }
 
 const BARE = [];

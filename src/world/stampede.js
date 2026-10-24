@@ -4,12 +4,13 @@
 // solid. They come apart as they run, shedding dark flakes into the wind, and
 // pull themselves back together. Their eyes stay lit.
 import * as THREE from 'three';
-import { LOOP_LEN, sample, elevation } from './track.js';
+import { LOOP_LEN, sample, elevation, HERD } from './track.js';
 import { merge } from './props.js';
 import { Spur, spurRibbon } from './spur.js';
+import { scoreAt, BREATH, constellationGeo, constellationMat, Vortex, Runes, buildForest, buildVines } from './herdScore.js';
 
 /** Where it happens, as loop fractions: the empty run between the Dust and the Ether. */
-export const STAMPEDE = { a: 0.185 * LOOP_LEN, b: 0.262 * LOOP_LEN };
+export const STAMPEDE = { a: HERD.sA, b: HERD.sB };
 const FADE = 120;
 
 // ---------------------------------------------------------------- the coming-apart
@@ -185,11 +186,15 @@ function legGeos(S) {
 function buildAnimal(kind) {
   const S = SPECIES[kind];
   GEO[kind] = GEO[kind] || { body: merge(S.body()), ...legGeos(S) };
+  GEO[kind].stars = GEO[kind].stars || constellationGeo(GEO[kind].body, kind === 'elephant' ? 5 : 6);
   const G = GEO[kind];
   const mat = herdMat();
   mat.userData.len.value = S.len / 2;
   const g = new THREE.Group();
   g.add(new THREE.Mesh(G.body, mat));
+  // the beast as stars: shows when the flesh is gone, so something is always there
+  const starMat = constellationMat(S.half * 0.05 + 0.04);
+  g.add(new THREE.Points(G.stars, starMat));
   const legs = S.legs.map(([x, z, front]) => {
     const hip = new THREE.Group();
     hip.position.set(x, S.hip, z);
@@ -207,7 +212,7 @@ function buildAnimal(kind) {
     g.add(e);
     return e;
   });
-  return { ...S, g, legs, eyes, mat, kind };
+  return { ...S, g, legs, eyes, mat, starMat, kind };
 }
 
 // ---------------------------------------------------------------- the herd
@@ -237,23 +242,16 @@ function herdPlan() {
  * The herd's own country: a thin bridge strung across a cold void, far from
  * anywhere else. Same interface as an off-ramp, so the car drives it as one.
  */
-const HERD_ORIGIN = { x: -9200, z: 9200 };
-export const HERD_LEN = 2600;
-export function buildHerdRoad(ringS) {
-  const raw = [];
-  const M = 2600;
-  for (let i = 0; i <= M; i++) {
-    const u = i / M;
-    const x = HERD_ORIGIN.x + u * HERD_LEN;
-    const z = HERD_ORIGIN.z + 70 * Math.sin(u * Math.PI * 2.2) + 25 * Math.sin(u * Math.PI * 7.1);
-    const y = 40 + 0.6 * Math.sin(u * Math.PI * 9);
-    raw.push([x, z, y, u]);
-  }
-  const road = new Spur({ kind: 'herd', side: 1, sA: ringS, sB: ringS, uSep: 0, raw });
-  road.tSepA = 0;
-  road.tSepB = road.N - 1;
-  return road;
+/** The herd's road is an off-ramp: it shares the deck, peels away, and comes back. */
+export function buildHerdRoad() {
+  return new Spur(HERD);
 }
+
+/** How wide the road is at fraction u: highway at both ends, a thin strip in the middle. */
+export const herdHalfWidth = (u) => {
+  const thin = THREE.MathUtils.smoothstep(u, 0.05, 0.16) * (1 - THREE.MathUtils.smoothstep(u, 0.84, 0.95));
+  return 8.3 + (3.6 - 8.3) * thin;
+};
 
 /** Pale old concrete: stains, cracks, potholes, and edges that have crumbled away. */
 function brokenRoadTexture() {
@@ -263,8 +261,19 @@ function brokenRoadTexture() {
   c.width = W;
   c.height = H;
   const g = c.getContext('2d');
-  g.fillStyle = '#34383c';
+  g.fillStyle = '#5d685f';
   g.fillRect(0, 0, W, H);
+  // moss and lichen in the low places, greener toward the crumbling edges
+  for (let k = 0; k < 140; k++) {
+    const edge = Math.random() < 0.6;
+    const x = edge ? (Math.random() < 0.5 ? Math.random() * 50 : W - Math.random() * 50) : Math.random() * W;
+    const y = Math.random() * H, r = 6 + Math.random() * 30;
+    const gr = g.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, `rgba(${60 + Math.random() * 30},${110 + Math.random() * 50},${60 + Math.random() * 20},${0.35 + Math.random() * 0.35})`);
+    gr.addColorStop(1, 'rgba(60,110,60,0)');
+    g.fillStyle = gr;
+    g.fillRect(x - r, y - r, r * 2, r * 2);
+  }
   // lighter worn patches and grit
   for (let k = 0; k < 4000; k++) { g.fillStyle = `rgba(${150 + Math.random() * 60},${150 + Math.random() * 60},${150 + Math.random() * 60},${Math.random() * 0.08})`; g.fillRect(Math.random() * W, Math.random() * H, 1 + Math.random() * 2, 1 + Math.random() * 2); }
   // grime and wet stains
@@ -321,12 +330,12 @@ export function herdRoadMesh(road) {
   const uv = [];
   const A = {};
   const B = {};
-  const HWB = 3.6;
-  for (let t = 0; t < road.N - 3; t += 3) {
+  for (let t = road.tSepA; t < road.tSepB - 3; t += 3) {
     road.sample(t, A);
     road.sample(t + 3, B);
+    const wa = herdHalfWidth(A.u), wb = herdHalfWidth(B.u);
     const c = (P, d) => [P.x + P.nx * d, P.y + 0.04, P.z + P.nz * d];
-    const a0 = c(A, -HWB), a1 = c(A, HWB), b0 = c(B, -HWB), b1 = c(B, HWB);
+    const a0 = c(A, -wa), a1 = c(A, wa), b0 = c(B, -wb), b1 = c(B, wb);
     const v0 = t / 40, v1 = (t + 3) / 40;
     pos.push(...a0, ...b0, ...b1, ...a0, ...b1, ...a1);
     uv.push(0, v0, 0, v1, 1, v1, 0, v0, 1, v1, 1, v0);
@@ -337,17 +346,33 @@ export function herdRoadMesh(road) {
   geo.computeVertexNormals();
   const deck = new THREE.MeshStandardMaterial({
     // wet: it holds the tail lights and the sky
-    map: tex, alphaTest: 0.5, color: 0xffffff, roughness: 0.28, metalness: 0.15, envMapIntensity: 1.2, side: THREE.DoubleSide,
+    map: tex, alphaTest: 0.5, color: 0xffffff, roughness: 0.32, metalness: 0.1, envMapIntensity: 1.3, emissive: 0x1a221c, emissiveMap: tex, side: THREE.DoubleSide,
   });
   g.add(new THREE.Mesh(geo, deck));
   // the slab's broken underside
-  g.add(new THREE.Mesh(spurRibbon(road, 0, road.N - 2, -2.9, 2.9, -0.02, -1.4, 3), new THREE.MeshStandardMaterial({ color: 0x2a2e33, roughness: 1 })));
+  g.add(new THREE.Mesh(spurRibbon(road, road.tSepA, road.tSepB, -2.9, 2.9, -0.02, -1.4, 3), new THREE.MeshStandardMaterial({ color: 0x2a2e33, roughness: 1 })));
   // a worn centre line, missing in stretches
   const dashes = [];
-  for (let t = 0; t < road.N - 6; t += 10) if (Math.sin(t * 0.013) > -0.4 && Math.random() > 0.2) dashes.push(spurRibbon(road, t, t + 4, -0.08, 0.08, 0.06, 0.05, 4));
-  const plain = new THREE.Mesh(new THREE.PlaneGeometry(6000, 3000).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x0d1013, roughness: 0.55, metalness: 0.1, envMapIntensity: 0.6 }));
-  plain.position.set(HERD_ORIGIN.x + HERD_LEN / 2, 39.25, HERD_ORIGIN.z);
-  g.add(plain);
+  for (let t = road.tSepA; t < road.tSepB - 6; t += 10) if (Math.sin(t * 0.013) > -0.4 && Math.random() > 0.2) dashes.push(spurRibbon(road, t, t + 4, -0.08, 0.08, 0.06, 0.05, 4));
+  // the land the herd runs on: it rises out of the void under the middle of the road and sinks back
+  const lp = [];
+  const lc = [];
+  for (let t = road.tSepA; t < road.tSepB - 6; t += 6) {
+    road.sample(t, A); road.sample(t + 6, B);
+    const ka = THREE.MathUtils.smoothstep(A.u, 0.1, 0.24) * (1 - THREE.MathUtils.smoothstep(A.u, 0.76, 0.9));
+    const kb = THREE.MathUtils.smoothstep(B.u, 0.1, 0.24) * (1 - THREE.MathUtils.smoothstep(B.u, 0.76, 0.9));
+    for (const [d0, d1] of [[-160, -4.2], [4.2, 160]]) {
+      const c = (P, d, k) => [P.x + P.nx * d, P.y - 0.8 - (1 - k) * 30, P.z + P.nz * d];
+      const q = [c(A, d0, ka), c(A, d1, ka), c(B, d1, kb), c(B, d0, kb)];
+      const al = [ka, ka, kb, kb];
+      for (const i of [0, 1, 2, 0, 2, 3]) { lp.push(...q[i]); lc.push(0.09, 0.12, 0.1, al[i]); }
+    }
+  }
+  const land = new THREE.BufferGeometry();
+  land.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3));
+  land.setAttribute('color', new THREE.Float32BufferAttribute(lc, 4));
+  land.computeVertexNormals();
+  g.add(new THREE.Mesh(land, new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, roughness: 0.6, side: THREE.DoubleSide, depthWrite: true })));
   g.add(new THREE.Mesh(merge(dashes), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.85, 0.86, 0.84) })));
   return g;
 }
@@ -367,7 +392,17 @@ export class Stampede {
     });
     this.makeFlakes();
     this.makeDust();
+    this.vortex = new Vortex(this.group);
+    this.runes = new Runes(this.group);
     this.w = 0;
+  }
+
+  /** The old trees and creeping vines belong to the bridge, not the herd. */
+  plant(road, scene) {
+    this.forest = new THREE.Group();
+    this.trees = buildForest(road, this.forest);
+    buildVines(road, this.forest);
+    scene.add(this.forest);
   }
 
   /** Dark flakes the bodies shed: tumbling, streaming back, gone. */
@@ -426,8 +461,8 @@ export class Stampede {
       F.vel[i * 3] = Q.nx * out + (Math.random() - 0.5) * 3;
       F.vel[i * 3 + 1] = 1 + Math.random() * 4;
       // and they're thrown forward, ahead of the herd, as fast as it runs
-      F.vel[i * 3] += Q.tx * a.speedNow * 0.9; F.vel[i * 3 + 2] += Q.tz * a.speedNow * 0.9;
       F.vel[i * 3 + 2] = Q.nz * out + (Math.random() - 0.5) * 3;
+      F.vel[i * 3] += Q.tx * a.speedNow * 0.9; F.vel[i * 3 + 2] += Q.tz * a.speedNow * 0.9;
       for (let c = 0; c < 3; c++) { F.rot[i * 3 + c] = Math.random() * 6; F.spin[i * 3 + c] = (Math.random() - 0.5) * 9; }
       F.size[i] = (0.15 + Math.random() * 0.7) * Math.sqrt(k) * (a.kind === 'wolf' ? 0.6 : 1);
       F.max[i] = F.life[i] = 1 + Math.random() * 1.8;
@@ -452,17 +487,25 @@ export class Stampede {
   update(dt, time, vehicle, road) {
     herdTime.value = time;
     const h = vehicle.spurHit && vehicle.spurHit.spur === road ? vehicle.spurHit : null;
-    const target = h ? Math.min(1, h.t / 120, (road.N - h.t) / 120) : 0;
-    this.w += (target - this.w) * Math.min(1, dt * (target > this.w ? 1.2 : 2));
+    const uh = h ? h.t / road.N : 0;
+    // no cut: the herd seeps in as the road leaves the deck, and drains out before it rejoins
+    const target = h ? THREE.MathUtils.smoothstep(uh, 0.03, 0.15) * (1 - THREE.MathUtils.smoothstep(uh, 0.86, 0.97)) : 0;
+    this.w += (target - this.w) * Math.min(1, dt * 2.5);
     this.group.visible = this.w > 0.01;
     const out = { w: this.w, near: 0 };
     if (!this.group.visible) return out;
     if (h) this.t = h.t;
-    // a crescendo: frail and few at the start of the bridge, everything by the end
-    const k = THREE.MathUtils.clamp((this.t || 0) / (road.N * 0.8), 0, 1);
-    const I = 0.14 + 0.86 * k * k * (3 - 2 * k);
+    // the score: which act we're in, and what it asks of the herd
+    const ur = (this.t || 0) / road.N;
+    const u = THREE.MathUtils.clamp((ur - 0.08) / 0.84, 0, 1); // the score plays over the ramp's middle
+    this.hover = 1 - THREE.MathUtils.smoothstep(ur, 0.1, 0.24) * (1 - THREE.MathUtils.smoothstep(ur, 0.76, 0.9));
+    const sc = scoreAt(u);
+    const I = sc.swell;
     this.intensity = I;
+    this.score = sc;
     out.intensity = I;
+    out.score = sc;
+    if (this.trees) for (const tr of this.trees) tr.g.visible = Math.abs(tr.u - ur) < 0.12 && ((tr.u * 97) % 1) < sc.trees;
     const C = road.sample(this.t || 0);
     const along = vehicle.vel.x * C.tx + vehicle.vel.z * C.tz;
     const pace = THREE.MathUtils.clamp(Math.max(along, 0), 18, 48);
@@ -479,19 +522,24 @@ export class Stampede {
       // sometimes an animal, sometimes only shards of one: the shape comes and goes fast
       // one slow wave rolls forward through the whole herd, like a breath: bodies
       // gather as it passes and come apart behind it, but never all the way
-      const wave = Math.sin(time * 1.15 - a.sOff * 0.035 - Math.abs(a.d) * 0.02);
+      const wave = Math.sin((time / BREATH) * Math.PI * 2 - a.sOff * 0.035 - Math.abs(a.d) * 0.02); // one breath every φ seconds
       const breathe = 0.62 + 0.38 * wave;
       const byLens = Math.abs(a.sOff + 8) < a.len * a.scaleK * 0.6 && Math.abs(a.d) < 4 + a.half * a.scaleK ? 0.3 : 1;
       const arrived = THREE.MathUtils.smoothstep(I, a.rank, a.rank + 0.08);
       const frail = 0.45 + 0.55 * I;
-      const form = arrived * frail * Math.max(0.3 * ends * this.w, byLens * ends * this.w * THREE.MathUtils.clamp(breathe, 0, 1));
+      const form = sc.body * arrived * frail * Math.max(0.3 * ends * this.w, byLens * ends * this.w * THREE.MathUtils.clamp(breathe, 0, 1));
       a.mat.userData.form.value = form;
       // as the wave crests, light rakes the body for a moment: a flash of what it is
       a.mat.userData.flash.value = Math.pow(Math.max(0, wave), 10);
-      a.g.visible = form > 0.02;
+      // stars arrive a little ahead of the flesh, and burn brightest when the body is gone
+      const starArrive = THREE.MathUtils.smoothstep(I + 0.3, a.rank, a.rank + 0.08) * ends * this.w;
+      const stars = starArrive * Math.min(1, sc.stars * (0.35 + 0.65 * (1 - form)) + 0.15);
+      a.starMat.opacity = stars * (0.75 + 0.25 * Math.sin(time * 9 + a.seed));
+      a.g.visible = form > 0.02 || stars > 0.02;
       if (!a.g.visible) continue;
       road.sample((this.t || 0) + a.sOff, Q);
-      const y = Q.y + a.rise;
+      // out over the void (before the land rises, after it sinks) they hover in space
+      const y = Q.y + a.rise + this.hover * (4 + Math.abs(a.d) * 0.25);
       // the herd gallops in step: one beat, every body on it
       this.beat = (this.beat || 0) + dt * 0.5 / this.herd.length;
       a.phase = time * 7.5 / Math.sqrt(a.scaleK) + (a.d > 0 ? 0 : Math.PI * 0.5);
@@ -516,6 +564,12 @@ export class Stampede {
       if (Math.random() < dt * 0.8 * this.w) this.puff(this.embers, a.g.position.x, y + a.hip * a.scaleK, a.g.position.z, 3, a.half * a.scaleK, 2.5);
       out.near = Math.max(out.near, (1 - Math.min(1, (Math.hypot(a.sOff, a.d) - 4) / 40)) * form);
     }
+    // the spiral opens ahead and the runes surface beside you
+    const ahead = road.sample((this.t || 0) + 230);
+    const eyeC = new THREE.Vector3(ahead.x, ahead.y + 34, ahead.z);
+    const T = new THREE.Vector3(-ahead.tx, 0, -ahead.tz);
+    this.vortex.update(time, eyeC, T, 70 + 40 * sc.vortex, sc.vortex * this.w);
+    this.runes.update(dt, time, road, this.t || 0, sc.runes * this.w);
     this.stepFlakes(dt);
     this.stepPoints(this.dust, dt, 0.4 * this.w);
     this.stepPoints(this.embers, dt, 0.9 * this.w);
