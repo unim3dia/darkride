@@ -41,7 +41,7 @@ function herdMat() {
       .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
         {
           vec3 q = vBody * 1.7 + vec3(0.0, uTime * 0.9, uTime * 1.3);
-          float n = vn(q) * 0.65 + vn(q * 2.7) * 0.35;
+          float n = vn(q + vec3(0.0, 0.0, uTime * 2.0)) * 0.65 + vn(q * 2.7) * 0.35;
           float rear = clamp(vBody.z / uLen, -1.0, 1.0) * 0.55;
           float cut = uForm + 0.12 - (n + rear);
           if (cut < 0.0) discard;
@@ -162,21 +162,26 @@ function herdPlan() {
   const plan = [];
   const pick = (list) => list[Math.floor(Math.random() * list.length)];
   for (const side of [-1, 1]) {
-    // wolves loping at the road's edge
-    for (let k = 0; k < 4; k++) plan.push({ kind: 'wolf', d: side * (5.3 + (k % 2) * 1.1), scale: 1.1 + Math.random() * 0.3, rise: 0, s: -5 + k * 20 + Math.random() * 8 });
-    // the body of the herd, shoulder to shoulder beside you
-    for (let k = 0; k < 14; k++) {
-      plan.push({ kind: pick(['bison', 'bison', 'bear', 'elk', 'horse']), d: side * (9 + (k % 5) * 2.8 + Math.random() * 1.5), scale: 1.2 + Math.random() * 0.5, rise: Math.random() * 1.2, s: -15 + k * 7 + Math.random() * 6 });
-    }
-    // giants further out, stacked up into the fog like a wave
-    for (let k = 0; k < 9; k++) {
-      plan.push({ kind: k === 4 ? 'elephant' : pick(['bison', 'elk', 'bear', 'horse']), d: side * (23 + (k % 3) * 6 + Math.random() * 3), scale: k === 4 ? 1.5 : 2.2 + Math.random() * 1.1, rise: 2 + (k % 3) * 5 + Math.random() * 3, s: -10 + k * 11 + Math.random() * 8 });
+    // right against the car: wolves and bison at the very edge of the road
+    for (let k = 0; k < 8; k++) plan.push({ kind: k % 2 ? 'wolf' : pick(['bison', 'horse']), d: side * (4.9 + Math.random() * 1.2), scale: k % 2 ? 1.2 : 1.1, rise: 0, s: -60 + k * 17 });
+    // a wall of them, floor to sky: rows stacked up and out, each row higher
+    for (let row = 0; row < 7; row++) {
+      const n = 9 - Math.floor(row / 2);
+      for (let k = 0; k < n; k++) {
+        plan.push({
+          kind: row === 4 && k === 2 ? 'elephant' : pick(['bison', 'bison', 'bear', 'elk', 'horse', 'wolf']),
+          d: side * (9 + row * 4.5 + Math.random() * 2),
+          scale: 1.3 + row * 0.35 + Math.random() * 0.4,
+          rise: row * row * 0.9 + Math.random() * 2,
+          s: -60 + (k / n) * 140 + Math.random() * 10,
+        });
+      }
     }
   }
   return plan;
 }
 
-const FLAKES = 3200;
+const FLAKES = 6000;
 
 export class Stampede {
   constructor(scene) {
@@ -187,7 +192,7 @@ export class Stampede {
       const a = buildAnimal(p.kind);
       a.g.scale.setScalar(p.scale);
       this.group.add(a.g);
-      return { ...a, d: p.d, scaleK: p.scale, rise: p.rise, sOff: p.s, phase: Math.random() * 6, pace: 0.93 + Math.random() * 0.18, wave: 0.25 + Math.random() * 0.5, seed: i * 1.7 };
+      return { ...a, d: p.d, scaleK: p.scale, rise: p.rise, sOff: p.s, phase: Math.random() * 6, pace: 1.3 + Math.random() * 0.5, wave: 0.6 + Math.random() * 0.9, seed: i * 1.7 };
     });
     this.makeFlakes();
     this.makeDust();
@@ -292,15 +297,17 @@ export class Stampede {
     const pace = THREE.MathUtils.clamp(Math.max(along, 0), 18, 48);
     const Q = {};
     for (const a of this.herd) {
-      const run = pace * a.pace * (1 + 0.1 * Math.sin(time * 0.31 + a.phase));
+      // they charge past you, faster than the car, and the herd never ends
+      const run = Math.max(pace, 26) * a.pace * (1 + 0.1 * Math.sin(time * 0.31 + a.phase));
       a.sOff += (run - along) * dt;
-      if (a.sOff > 100) a.sOff -= 3 * dt * (a.sOff - 100);
-      if (a.sOff < -25) a.sOff += 3 * dt * (-25 - a.sOff);
+      if (a.sOff > 90) a.sOff -= 150;
+      if (a.sOff < -60) a.sOff += 150;
+      const ends = THREE.MathUtils.smoothstep(a.sOff, -60, -45) * (1 - THREE.MathUtils.smoothstep(a.sOff, 75, 90));
       // it fills in from the edges as you go deeper, and every body breathes in and out of being
-      const far = Math.abs(a.d) / 40;
+      const far = Math.abs(a.d) / 60;
       const arrive = THREE.MathUtils.clamp((this.w - far * 0.5) * 2.5, 0, 1);
       const breathe = 0.78 + 0.3 * Math.sin(time * a.wave + a.seed); // mostly there, crumbling from the back
-      const form = arrive * (Math.abs(a.d) < 8 ? Math.max(0.85, breathe) : breathe);
+      const form = ends * arrive * (Math.abs(a.d) < 8 ? Math.max(0.85, breathe) : breathe);
       a.mat.userData.form.value = form;
       a.g.visible = form > 0.02;
       if (!a.g.visible) continue;
@@ -322,7 +329,7 @@ export class Stampede {
       if (Math.random() < dt * 0.8 * this.w) this.puff(this.embers, a.g.position.x, y + a.hip * a.scaleK, a.g.position.z, 3, a.half * a.scaleK, 2.5);
       // too close: they shoulder you back toward the middle
       const dd = (vehicle.d ?? 0) - a.d;
-      const reach = a.half * a.scaleK + 1.1;
+      const reach = a.half * a.scaleK + 0.3;
       if (Math.abs(a.sOff) < a.len * a.scaleK * 0.6 && Math.abs(dd) < reach && a.rise < 0.5) {
         out.push = Math.sign(dd || -a.d) * (reach - Math.abs(dd));
         out.normal = { x: Q.nx, z: Q.nz };

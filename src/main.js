@@ -10,7 +10,7 @@ import { Watchers } from './world/watchers.js';
 import { Ambient } from './world/ambient.js';
 import { Mist } from './world/mist.js';
 import { FogLayers } from './world/fogLayers.js';
-import { gapAt, zoneIndexAt, sample, rng } from './world/track.js';
+import { gapAt, zoneIndexAt, sample, rng, project } from './world/track.js';
 import { District } from './world/district.js';
 import { Narrows } from './world/narrows.js';
 import { LOOP_LEN } from './world/track.js';
@@ -66,7 +66,9 @@ for (const p of places) chunks.extras.push(p.chunk);
 const forks = new Forks(scene);
 vehicle.spurs = [...forks.spurs, ...forks.detours];
 for (const c of forks.chunks) chunks.extras.push(c);
-chunks.avoid = (x, z) => !!placeAt(x, z, 40) || forks.near(x, z);
+// nothing stands beside the road where the herd runs: just the deck, the herd and the sky
+const inHerd = (x, z) => { const q = project(x, z, (STAMPEDE.a + STAMPEDE.b) / 2); return q.ok && q.s > STAMPEDE.a - 60 && q.s < STAMPEDE.b + 60; };
+chunks.avoid = (x, z) => !!placeAt(x, z, 40) || forks.near(x, z) || inHerd(x, z);
 vehicle.street = { contains: (x, z, margin = 0) => !!placeAt(x, z, margin) };
 rig.clip = (from, to) => {
   const safe = (placeAt(to.x, to.z, 30) || district).clipCamera(from, to);
