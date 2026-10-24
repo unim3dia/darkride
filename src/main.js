@@ -19,6 +19,7 @@ import { Trail } from './world/trail.js';
 import { Forks } from './world/forks.js';
 import { DriveInMovie, LOT } from './world/driveIn.js';
 import { Race, RACE_PALETTE } from './world/race.js';
+import { Hood, hoodHalfWidth } from './world/hood.js';
 import { Stampede, STAMPEDE, buildHerdRoad, herdRoadMesh, herdHalfWidth } from './world/stampede.js';
 import { collidersFrom, updateBodies } from './world/bodies.js';
 import { Vehicle } from './player/vehicle.js';
@@ -66,7 +67,7 @@ for (const p of places) chunks.extras.push(p.chunk);
 const forks = new Forks(scene);
 vehicle.spurs = [...forks.spurs, ...forks.detours];
 for (const c of forks.chunks) chunks.extras.push(c);
-chunks.avoid = (x, z) => !!placeAt(x, z, 40) || forks.near(x, z) || (herdRoadRef && herdNear(x, z));
+chunks.avoid = (x, z) => !!placeAt(x, z, 40) || forks.near(x, z) || (herdRoadRef && herdNear(x, z)) || (hoodRef && hoodRef.near(x, z));
 vehicle.street = { contains: (x, z, margin = 0) => !!placeAt(x, z, margin) };
 rig.clip = (from, to) => {
   const safe = (placeAt(to.x, to.z, 30) || district).clipCamera(from, to);
@@ -110,6 +111,7 @@ function warpSpots() {
   });
   // the drive-in, nosed toward the screen; the middle of the Narrows
   spots.push({ name: 'drive-in', go: () => { const p = district.toWorld(LOT.u1 - 30, LOT.aisleV); vehicle.placeAt(p.x, 0, p.z, -district.yawToward(-1, 0), 4); } });
+  spots.push({ name: 'block', go: () => { const p = hood.spur.sample(hood.spur.N * 0.3); vehicle.placeAt(p.x, p.y + 0.4, p.z, p.heading, 16); } });
   spots.push({ name: 'narrows', go: () => vehicle.reset(narrows.s0, 0, 0, 16) });
   spots.push({ name: 'stampede', go: () => { const p = herdRoad.sample(herdRoad.N * 0.2); vehicle.placeAt(p.x, p.y + 0.4, p.z, p.heading, 24); } });
   spots.push({ name: 'race', go: () => { const p = narrows.toWorld(RACE_U, -60, 0); vehicle.placeAt(p.x, 0, p.z, -narrows.yawToward(0, -1), 10); } });
@@ -315,6 +317,7 @@ vehicle.spurs.push(race.track);
 }
 const stampede = new Stampede(scene);
 let herdRoadRef = null;
+let hoodRef = null;
 function herdNear(x, z) {
   const b = herdRoadRef.box;
   if (x < b.minX - 200 || x > b.maxX + 200 || z < b.minZ - 200 || z > b.maxZ + 200) return false;
@@ -326,6 +329,17 @@ scene.add(herdRoadMesh(herdRoad));
 stampede.plant(herdRoad, scene);
 vehicle.spurs.push(herdRoad);
 herdRoadRef = herdRoad;
+// the forgotten block off the Ruins, and its one shot
+const hood = new Hood(scene, rng(7777));
+vehicle.spurs.push(hood.spur);
+hoodRef = hood;
+for (const dist of [400, 200]) {
+  const A = sample(hood.spur.sA - dist);
+  const v = new THREE.Vector3(A.x - A.nx * (ROAD.HALF_WIDTH + 4), A.y + 5.4, A.z - A.nz * (ROAD.HALF_WIDTH + 4));
+  district.signAt('THE BLOCK', `${dist} m · ← one shot`, v, Math.atan2(-A.tx, -A.tz), [0xffa860, 0xe8d2a8]);
+}
+// almost no light: the street lives on its windows
+const HOOD_PALETTE = { fog: 0x1a1714, skyTop: 0x050506, skyHorizon: 0x221d18, glow: 0x2c241c, light: 0.16, exposure: 0.95, fogMul: 0.9, grain: 1.5, rain: 0.2 };
 {
   // the way in looks like any other exit: signs counting down, the right lane peeling off
   for (const dist of [600, 300, 120]) {
@@ -622,6 +636,25 @@ function tick(now) {
     const into = (vehicle.vel.x * onHerd.nx + vehicle.vel.z * onHerd.nz) * side;
     if (into > 0) { vehicle.vel.x -= onHerd.nx * side * into; vehicle.vel.z -= onHerd.nz * side * into; }
   }
+  // the block: one shot at the hoop
+  const onHood = vehicle.spurHit && vehicle.spurHit.spur === hood.spur ? vehicle.spurHit : null;
+  const hu = onHood ? onHood.t / hood.spur.N : 0;
+  state.hoodW = (state.hoodW || 0) + ((onHood ? Math.min(1, hu * 6, (1 - hu) * 6) : 0) - (state.hoodW || 0)) * Math.min(1, dt * 2);
+  if (state.hoodW > 0.01 && !ambient.pocket) ambient.pocket = { weight: state.hoodW, palette: HOOD_PALETTE };
+  if (onHood && onHood.t > hood.spur.tSepA && onHood.t < hood.spur.tSepB && Math.abs(onHood.d) > hoodHalfWidth() - 1.2 && !vehicle.airborne) {
+    const side = Math.sign(onHood.d);
+    const over = Math.abs(onHood.d) - (hoodHalfWidth() - 1.2);
+    vehicle.pos.x -= onHood.nx * side * over; vehicle.pos.z -= onHood.nz * side * over;
+    const into = (vehicle.vel.x * onHood.nx + vehicle.vel.z * onHood.nz) * side;
+    if (into > 0) { vehicle.vel.x -= onHood.nx * side * into; vehicle.vel.z -= onHood.nz * side * into; }
+  }
+  if (onHood && hu > 0.15 && !state.hoodShown) { state.hoodShown = true; screens.showCard('THE BLOCK', 'one ball · one shot'); }
+  if (!onHood) state.hoodShown = false;
+  const hev = hood.update(dt, state.time, vehicle);
+  if (hev.shot) { audio.bump(12); audio.tone(90, 0.3, 0.5, { to: 50, wet: 0.5 }); rig.shake(0.4); }
+  if (hev.swish) { audio.tone(523.25, 0.12, 1.2, { wet: 0.7 }); audio.tone(659.25, 0.1, 1.4, { wet: 0.7, delay: 0.12 }); audio.tone(783.99, 0.1, 1.8, { wet: 0.8, delay: 0.24 }); screens.showCard('SWISH', 'from downtown'); }
+  if (hev.miss === 'rim') { audio.tone(220, 0.2, 0.6, { type: 'triangle', to: 180, wet: 0.6 }); screens.showCard('OFF THE RIM', 'so close'); }
+  if (hev.miss === 'air') screens.showCard('AIRBALL', 'the block saw that');
   audio.stampede(herd.w, herd.near, herd.intensity || 0, herd.score ? herd.score.vortex : 0);
   if (herd.w > 0.5 && !state.herdShown) { state.herdShown = true; screens.showCard('THE STAMPEDE', 'they were running long before the road'); }
   if (herd.w < 0.05) state.herdShown = false;
@@ -644,7 +677,7 @@ function tick(now) {
   catchUniforms.uSrc.value.copy(vehicle.pos).addScaledVector(catchUniforms.uDir.value, 2.9).y += 0.8;
 
   const z = zoneIndexAt(vehicle.s);
-  if (z !== state.zone && state.mode === 'ride' && !pk.pocket && pk.cave < 0.01 && !race.active && stampede.w < 0.05) {
+  if (z !== state.zone && state.mode === 'ride' && !pk.pocket && pk.cave < 0.01 && !race.active && stampede.w < 0.05 && !(state.hoodW > 0.05)) {
     state.zone = z;
     screens.showZone(z);
     audio.setZone(z);
