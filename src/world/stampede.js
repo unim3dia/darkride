@@ -539,15 +539,19 @@ export class Stampede {
       if (!a.g.visible) continue;
       road.sample((this.t || 0) + a.sOff, Q);
       // out over the void (before the land rises, after it sinks) they hover in space
-      const y = Q.y + a.rise + this.hover * (4 + Math.abs(a.d) * 0.25);
       // the herd gallops in step: one beat, every body on it
-      this.beat = (this.beat || 0) + dt * 0.5 / this.herd.length;
       a.phase = time * 7.5 / Math.sqrt(a.scaleK) + (a.d > 0 ? 0 : Math.PI * 0.5);
       const bob = Math.abs(Math.sin(a.phase)) * a.hip * 0.18 * a.scaleK;
-      a.g.position.set(Q.x + Q.nx * a.d, y + bob, Q.z + Q.nz * a.d);
+      // out over the void (before the land rises, after it sinks) they're colossal and
+      // sunk: the head rides level with the car, the body plunges down past the road
+      const hv = this.hover;
+      const grow = a.scaleK * (0.5 + 0.5 * Math.min(1, I + 0.15)) * (1 + hv * (a.kind === 'wolf' ? 0.6 : 1.4));
+      const headY = a.eyes[0].position.y * grow;
+      const y = Q.y + a.rise * (1 - hv) + hv * (1.4 - headY);
+      const d = a.d + Math.sign(a.d) * hv * (a.half * grow * 0.9 + 2);
+      a.g.position.set(Q.x + Q.nx * d, y + bob, Q.z + Q.nz * d);
       a.g.rotation.set(Math.sin(a.phase * 2) * 0.05, -Q.heading, 0);
-      // smeared by its own speed, and now and then it skips like a bad memory
-      const grow = a.scaleK * (0.5 + 0.5 * Math.min(1, I + 0.15));
+      // smeared by its own speed
       a.g.scale.set(grow, grow, grow * (1 + 1.2 * (1 - form)));
       // a rotary gallop: the two fronts land close together, then the two hinds
       a.legs.forEach((l, i) => {
