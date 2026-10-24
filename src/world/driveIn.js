@@ -3,7 +3,7 @@
 // races, a photo finish, and the ones that end in a wreck. Pull in, stop, watch.
 import * as THREE from 'three';
 import { buildStaticCar, buildRider } from '../player/carModel.js';
-import { boxAt, boxUV, cylAt, fence } from './districtKit.js';
+import { boxAt, boxUV, cylAt } from './districtKit.js';
 
 /** The lot, in the district's frame (u along the drag, v across it). */
 export const LOT = { u0: 114, u1: 236, v0: -201, v1: -79, aisleV: -140, screenU: 119 };
@@ -13,12 +13,11 @@ const SCREEN_Y = 3.6;
 
 export const inLotBlock = (cu, cv) => cu > LOT.u0 && cu < LOT.u1 && cv > LOT.v0 && cv < LOT.v1;
 
-/** Static parts: the gravel, the fence and gate, the screen's frame, rows of cars, the booth. */
+/** Static parts: the gravel, the screen's frame, rows of cars, the booth. Open on every side. */
 export function layoutLot(d, K) {
   const r = d.r;
   const { u0, u1, v0, v1, aisleV, screenU } = LOT;
   K.add('dirt', boxUV(u0, u1, v0, v1, 0, 0.03));
-  fence(K, u0, u1, v0, v1, { side: 'u1', at: aisleV });
   // the screen: a tall flat on a steel lattice, its back to the city
   K.add('concrete', boxUV(screenU - 1.4, screenU - 0.2, aisleV - SCREEN_W / 2 - 1, aisleV + SCREEN_W / 2 + 1, 0, SCREEN_Y + SCREEN_H + 1));
   K.box(screenU - 1.4, screenU - 0.2, aisleV - SCREEN_W / 2 - 1, aisleV + SCREEN_W / 2 + 1, SCREEN_Y + SCREEN_H + 1);
