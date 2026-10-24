@@ -7,8 +7,8 @@ import { boxAt, boxUV, cylAt } from './districtKit.js';
 
 /** The lot, in the district's frame (u along the drag, v across it). */
 export const LOT = { u0: 114, u1: 236, v0: -201, v1: -79, aisleV: -140, screenU: 119 };
-const SCREEN_W = 34;
-const SCREEN_H = 15;
+const SCREEN_W = 52;
+const SCREEN_H = 23;
 const SCREEN_Y = 3.6;
 
 export const inLotBlock = (cu, cv) => cu > LOT.u0 && cu < LOT.u1 && cv > LOT.v0 && cv < LOT.v1;
@@ -187,7 +187,7 @@ export class DriveInMovie {
     this.cam = new THREE.PerspectiveCamera(38, SCREEN_W / SCREEN_H, 0.5, 2000);
     this.cars = PAINTS.map((c) => { const m = filmCar(c); this.scene.add(m); return { mesh: m, p: 0, lane: 0, v: 0, free: null }; });
     this.dust = this.makeDust();
-    this.rt = new THREE.WebGLRenderTarget(896, 396, { samples: 2 });
+    this.rt = new THREE.WebGLRenderTarget(1152, 510, { samples: 2 });
     this.rt.texture.colorSpace = THREE.SRGBColorSpace;
     this.buildScreen(booth);
     this.reel = -1;
@@ -250,7 +250,7 @@ export class DriveInMovie {
         }`,
       blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false,
     });
-    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 11, len, 24, 1, true), this.beamMat);
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 16, len, 24, 1, true), this.beamMat);
     beam.position.copy(booth).add(to).multiplyScalar(0.5);
     beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), to.clone().sub(booth).normalize());
     d.world.add(beam);
