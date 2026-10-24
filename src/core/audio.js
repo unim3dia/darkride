@@ -286,6 +286,98 @@ export class Audio {
     this.windFilter.frequency.setTargetAtTime(300 + speed * 22, t, 0.2);
   }
 
+  /**
+   * The title screen: an ominous, very low beat. A sub that drops like a
+   * heartbeat, a bass that grinds a half-step, a tick far off in a big room,
+   * and every eight bars a dissonant swell. Fades away when the ride begins.
+   */
+  menu(on) {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    if (!on) {
+      if (!this.menuGain) return;
+      this.menuGain.gain.cancelScheduledValues(t);
+      this.menuGain.gain.setTargetAtTime(0, t, 1.4);
+      clearInterval(this.menuTimer);
+      this.menuTimer = null;
+      const voices = this.menuBass || [];
+      setTimeout(() => voices.forEach((o) => o.stop()), 7000);
+      return;
+    }
+    if (this.menuTimer) return;
+    this.menuGain = this.gain(0);
+    this.menuGain.connect(this.master);
+    this.menuGain.gain.setTargetAtTime(1, t, 1.5);
+    const send = this.gain(0.6);
+    this.menuGain.connect(send).connect(this.verbIn);
+    // the bass: two saws a hair apart, under a lowpass that slowly breathes
+    const bassF = this.filter('lowpass', 110, 4);
+    const bassG = this.gain(0.16);
+    this.menuBass = [ctx.createOscillator(), ctx.createOscillator()];
+    this.menuBass.forEach((o, i) => { o.type = 'sawtooth'; o.frequency.value = 36.71 * (i ? 1.004 : 1); o.connect(bassF); o.start(); });
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 0.07;
+    const lfoAmt = this.gain(60);
+    lfo.connect(lfoAmt).connect(bassF.frequency);
+    lfo.start();
+    bassF.connect(bassG).connect(this.menuGain);
+    const BEAT = 60 / 66;
+    let next = t + 0.3;
+    let step = 0;
+    const kick = (at, peak) => {
+      const o = ctx.createOscillator();
+      const g = this.gain();
+      o.frequency.setValueAtTime(58, at);
+      o.frequency.exponentialRampToValueAtTime(29, at + 0.5);
+      o.connect(g).connect(this.menuGain);
+      this.env(g, at, 0.006, peak, 1.1);
+      o.start(at);
+      o.stop(at + 1.3);
+    };
+    const tick = (at, peak) => {
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      const g = this.gain();
+      src.connect(this.filter('bandpass', 5200, 6)).connect(g).connect(this.menuGain);
+      this.env(g, at, 0.002, peak, 0.05);
+      src.start(at, Math.random() * 2, 0.1);
+    };
+    const swell = (at) => {
+      for (const f of [73.42, 77.78, 110]) {
+        const o = ctx.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.value = f;
+        const g = this.gain();
+        o.connect(this.filter('lowpass', 320, 1)).connect(g).connect(this.menuGain);
+        g.gain.setValueAtTime(0.0001, at);
+        g.gain.linearRampToValueAtTime(0.03, at + BEAT * 4);
+        g.gain.linearRampToValueAtTime(0.0001, at + BEAT * 8);
+        o.start(at);
+        o.stop(at + BEAT * 8 + 0.1);
+      }
+    };
+    const schedule = () => {
+      while (next < ctx.currentTime + 0.4) {
+        const beat = step % 4;
+        const bar = Math.floor(step / 4);
+        if (beat === 0) kick(next, 0.55);
+        if (beat === 1) kick(next + BEAT * 0.5, 0.32); // the heartbeat's second, softer thump
+        if (beat === 2 || beat === 3) tick(next + BEAT * 0.5, 0.05);
+        if (step % 32 === 0) swell(next);
+        // every four bars the bass grinds up a half-step and back
+        if (beat === 0) {
+          const f = bar % 8 >= 4 ? 38.89 : 36.71;
+          this.menuBass.forEach((o, i) => o.frequency.setTargetAtTime(f * (i ? 1.004 : 1), next, 0.4));
+        }
+        next += BEAT;
+        step++;
+      }
+    };
+    schedule();
+    this.menuTimer = setInterval(schedule, 100);
+  }
+
   /** The drive-in's speakers: the film's engines rise and fall, a crash cracks. */
   movie(level, roar, hit) {
     if (!this.ctx) return;

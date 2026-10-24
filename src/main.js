@@ -285,8 +285,16 @@ rig.view = 1; // the title shot looks back at the driver
 
 function startRide() {
   if (state.mode !== 'title') return;
+  // browsers keep quiet until you touch something: the first press wakes the title's beat
+  if (!audio.ctx) {
+    audio.start();
+    audio.menu(true);
+    const prompt = document.querySelector('.start');
+    if (prompt) prompt.textContent = TOUCH ? 'tap again to ride' : 'press again to ride';
+    return;
+  }
   state.mode = 'ride';
-  audio.start();
+  audio.menu(false);
   screens.begin();
   rig.view = 0;
   rig.blend = 0;
