@@ -25,13 +25,14 @@ function herdMat() {
   // solid, shaded bodies with cold light raking their edges; they only lose form where they come apart
   const m = new THREE.MeshStandardMaterial({ color: 0x0c1015, roughness: 0.9, metalness: 0, envMapIntensity: 0.15, side: THREE.DoubleSide });
   const form = { value: 1 };
+  const flash = { value: 0 };
   const len = { value: 2 };
-  m.userData = { form, len };
+  m.userData = { form, len, flash };
   m.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, { uForm: form, uLen: len, uTime: herdTime });
+    Object.assign(sh.uniforms, { uForm: form, uLen: len, uTime: herdTime, uFlash: flash });
     sh.vertexShader = 'varying vec3 vBody;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvBody = position;');
     sh.fragmentShader = `
-      uniform float uForm; uniform float uLen; uniform float uTime;
+      uniform float uForm; uniform float uLen; uniform float uTime; uniform float uFlash;
       varying vec3 vBody;
       float hh(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
       float vn(vec3 p) {
@@ -52,7 +53,7 @@ function herdMat() {
         }`)
       .replace('#include <opaque_fragment>', `{
           float rim = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewPosition))), 2.5);
-          outgoingLight += vec3(0.4, 0.55, 0.75) * rim * rim * 0.55 + vec3(0.6, 0.78, 1.0) * herdEdge * 0.45;
+          outgoingLight += vec3(0.4, 0.55, 0.75) * rim * rim * (0.45 + uFlash * 2.2) + vec3(0.75, 0.88, 1.0) * rim * uFlash * 0.6 + vec3(0.6, 0.78, 1.0) * herdEdge * 0.45;
         }
         #include <opaque_fragment>`);
   };
@@ -69,88 +70,136 @@ const sph = (r, sx, sy, sz, x, y, z) => new THREE.SphereGeometry(r, 14, 10).scal
 const cone = (r, h, rx, x, y, z) => new THREE.ConeGeometry(r, h, 7).rotateX(rx).translate(x, y, z);
 const tube = (pts, r) => new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map((p) => new THREE.Vector3(...p))), 8, r, 6);
 
+/**
+ * A body laid along a spine: overlapping ellipsoids from rump to withers, each
+ * with its own girth and height, so the silhouette has a chest, a waist, haunches.
+ * `spine` rows: [z, y, rx, ry, rz].
+ */
+const spineBody = (spine) => spine.map(([z, y, rx, ry, rz]) => sph(1, rx, ry, rz, 0, y, z));
+
+/** A chain of ellipsoids from a to b, tapering: necks, snouts, tails. */
+function chain(a, b, r0, r1, n = 4, flat = 1) {
+  const out = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    const r = r0 + (r1 - r0) * t;
+    out.push(sph(1, r * flat, r, r * 1.5, a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t));
+  }
+  return out;
+}
+
+function antlers() {
+  const g = [];
+  for (const s of [-1, 1]) {
+    g.push(tube([[s * 0.12, 3.0, -1.7], [s * 0.6, 3.6, -1.5], [s * 0.9, 4.3, -1.0], [s * 0.95, 4.8, -0.4]], 0.05));
+    for (const [t0, t1] of [[[s * 0.45, 3.45, -1.55], [s * 0.6, 3.9, -2.1]], [[s * 0.75, 3.95, -1.25], [s * 1.0, 4.45, -1.75]], [[s * 0.9, 4.45, -0.8], [s * 1.25, 4.9, -1.1]], [[s * 0.92, 4.6, -0.6], [s * 0.7, 5.1, -0.9]]]) {
+      g.push(tube([t0, [(t0[0] + t1[0]) / 2, (t0[1] + t1[1]) / 2 + 0.05, (t0[2] + t1[2]) / 2], t1], 0.035));
+    }
+  }
+  return g;
+}
+
+/**
+ * Each faces -z with its feet at y = 0. `legs`: [x, z, front?]; `up`/`lo` are
+ * the thigh and shin lengths (they sum to the hip height), `r` their thickness.
+ */
 const SPECIES = {
   wolf: {
     body: () => [
-      sph(1, 0.42, 0.48, 1.05, 0, 0.95, 0), sph(0.42, 1, 1.05, 1.1, 0, 1.12, -0.9),
-      sph(0.3, 1, 0.95, 1.15, 0, 1.2, -1.35), cone(0.13, 0.42, -Math.PI / 2, 0, 1.12, -1.75),
-      cone(0.08, 0.26, 0, -0.14, 1.5, -1.3), cone(0.08, 0.26, 0, 0.14, 1.5, -1.3),
-      tube([[0, 1.05, 0.95], [0, 0.95, 1.45], [0, 0.7, 1.8]], 0.09),
+      ...spineBody([[0.75, 0.98, 0.22, 0.26, 0.4], [0.3, 0.98, 0.24, 0.27, 0.42], [-0.15, 1.0, 0.27, 0.31, 0.42], [-0.55, 1.05, 0.3, 0.36, 0.4]]),
+      ...chain([0, 1.1, -0.75], [0, 1.3, -1.05], 0.2, 0.16, 3),
+      sph(1, 0.19, 0.17, 0.24, 0, 1.33, -1.22), ...chain([0, 1.27, -1.38], [0, 1.22, -1.62], 0.1, 0.06, 3),
+      cone(0.06, 0.2, 0, -0.1, 1.53, -1.17), cone(0.06, 0.2, 0, 0.1, 1.53, -1.17),
+      ...chain([0, 1.02, 0.95], [0, 0.72, 1.55], 0.09, 0.06, 4),
     ],
-    legs: [[-0.22, -0.65], [0.22, -0.65], [-0.22, 0.7], [0.22, 0.7]], hip: 0.95, legR: 0.075, eyes: [[-0.12, 1.27, -1.6], [0.12, 1.27, -1.6]],
-    len: 3.3, half: 0.7, stride: 0.55, swing: 0.9,
+    legs: [[-0.15, -0.5, 1], [0.15, -0.5, 1], [-0.15, 0.68, 0], [0.15, 0.68, 0]], up: 0.5, lo: 0.48, r: 0.07, hip: 0.98,
+    eyes: [[-0.09, 1.38, -1.33], [0.09, 1.38, -1.33]], len: 3.2, half: 0.55, swing: 0.75,
   },
   bison: {
     body: () => [
-      sph(1, 1.35, 1.35, 2.3, 0, 2.2, 0.2), sph(1.35, 1.05, 1.1, 1, 0, 2.9, -1.0), sph(0.8, 1, 1.05, 1.2, 0, 1.7, -2.5),
-      cone(0.12, 0.7, 0, -0.75, 2.25, -2.6), cone(0.12, 0.7, 0, 0.75, 2.25, -2.6),
-      sph(0.55, 1, 0.8, 1, 0, 1.15, -2.2), // the beard
+      ...spineBody([[1.3, 1.85, 0.6, 0.62, 0.7], [0.6, 1.95, 0.72, 0.75, 0.8], [-0.1, 2.15, 0.85, 0.95, 0.75], [-0.7, 2.45, 0.9, 1.15, 0.7], [-1.2, 2.35, 0.75, 1.0, 0.55]]),
+      sph(1, 0.55, 0.62, 0.6, 0, 1.75, -1.75), sph(1, 0.42, 0.45, 0.55, 0, 1.4, -2.15), // head hung low
+      sph(1, 0.32, 0.5, 0.4, 0, 1.05, -1.95), // beard
+      cone(0.08, 0.5, 0, -0.55, 1.95, -1.9).rotateZ(0.3), cone(0.08, 0.5, 0, 0.55, 1.95, -1.9),
+      ...chain([0, 1.95, 1.9], [0, 1.4, 2.1], 0.07, 0.05, 3),
     ],
-    legs: [[-0.65, -1.3], [0.65, -1.3], [-0.65, 1.4], [0.65, 1.4]], hip: 1.7, legR: 0.28, eyes: [[-0.5, 1.95, -3.0], [0.5, 1.95, -3.0]],
-    len: 5, half: 1.5, stride: 0.38, swing: 0.75,
+    legs: [[-0.42, -1.0, 1], [0.42, -1.0, 1], [-0.42, 1.25, 0], [0.42, 1.25, 0]], up: 0.75, lo: 0.75, r: 0.2, hip: 1.5,
+    eyes: [[-0.35, 1.6, -2.35], [0.35, 1.6, -2.35]], len: 4.8, half: 1.0, swing: 0.6,
   },
   bear: {
     body: () => [
-      sph(1, 0.95, 1.0, 1.55, 0, 1.45, 0.1), sph(0.85, 1.1, 1, 1, 0, 2.05, -0.65), sph(0.55, 1, 0.95, 1.05, 0, 1.75, -1.65),
-      sph(0.28, 1, 0.85, 1.3, 0, 1.6, -2.15), sph(0.17, 1, 1, 0.6, -0.36, 2.2, -1.6), sph(0.17, 1, 1, 0.6, 0.36, 2.2, -1.6),
+      ...spineBody([[0.95, 1.3, 0.62, 0.62, 0.6], [0.35, 1.42, 0.7, 0.72, 0.65], [-0.3, 1.6, 0.75, 0.82, 0.6], [-0.8, 1.7, 0.66, 0.75, 0.5]]),
+      ...chain([0, 1.6, -1.1], [0, 1.5, -1.45], 0.42, 0.38, 2),
+      sph(1, 0.4, 0.38, 0.42, 0, 1.55, -1.65), ...chain([0, 1.45, -1.9], [0, 1.4, -2.15], 0.18, 0.12, 2),
+      sph(1, 0.12, 0.13, 0.06, -0.26, 1.92, -1.6), sph(1, 0.12, 0.13, 0.06, 0.26, 1.92, -1.6),
     ],
-    legs: [[-0.5, -0.95], [0.5, -0.95], [-0.5, 1.0], [0.5, 1.0]], hip: 1.25, legR: 0.25, eyes: [[-0.2, 1.88, -2.08], [0.2, 1.88, -2.08]],
-    len: 4, half: 1.1, stride: 0.42, swing: 0.7,
+    legs: [[-0.38, -0.75, 1], [0.38, -0.75, 1], [-0.38, 0.85, 0], [0.38, 0.85, 0]], up: 0.6, lo: 0.6, r: 0.2, hip: 1.2,
+    eyes: [[-0.16, 1.68, -1.95], [0.16, 1.68, -1.95]], len: 3.8, half: 0.85, swing: 0.6,
   },
   elk: {
-    body: () => {
-      const g = [
-        sph(1, 0.55, 0.7, 1.25, 0, 1.65, 0), tube([[0, 1.9, -0.9], [0, 2.4, -1.3], [0, 2.75, -1.55]], 0.26),
-        sph(0.3, 0.9, 0.9, 1.6, 0, 2.8, -1.85),
-      ];
-      // antlers: a beam each side sweeping back, tines rising off it
-      for (const s of [-1, 1]) {
-        g.push(tube([[s * 0.12, 3.0, -1.7], [s * 0.6, 3.6, -1.5], [s * 0.9, 4.3, -1.0], [s * 0.95, 4.8, -0.4]], 0.05));
-        for (const [t0, t1] of [[[s * 0.45, 3.45, -1.55], [s * 0.6, 3.9, -2.1]], [[s * 0.75, 3.95, -1.25], [s * 1.0, 4.45, -1.75]], [[s * 0.9, 4.45, -0.8], [s * 1.25, 4.9, -1.1]], [[s * 0.92, 4.6, -0.6], [s * 0.7, 5.1, -0.9]]]) {
-          g.push(tube([t0, [(t0[0] + t1[0]) / 2, (t0[1] + t1[1]) / 2 + 0.05, (t0[2] + t1[2]) / 2], t1], 0.035));
-        }
-      }
-      return g;
-    },
-    legs: [[-0.28, -0.85], [0.28, -0.85], [-0.28, 0.85], [0.28, 0.85]], hip: 1.55, legR: 0.08, eyes: [[-0.2, 2.9, -2.05], [0.2, 2.9, -2.05]],
-    len: 4, half: 1.0, stride: 0.48, swing: 0.85,
+    body: () => [
+      ...spineBody([[0.85, 1.65, 0.32, 0.38, 0.45], [0.3, 1.62, 0.34, 0.4, 0.5], [-0.3, 1.7, 0.36, 0.44, 0.5], [-0.8, 1.82, 0.34, 0.45, 0.42]]),
+      ...chain([0, 1.95, -1.0], [0, 2.75, -1.55], 0.22, 0.16, 5),
+      sph(1, 0.16, 0.18, 0.26, 0, 2.85, -1.75), ...chain([0, 2.75, -1.95], [0, 2.6, -2.2], 0.12, 0.08, 2),
+      ...antlers(),
+    ],
+    legs: [[-0.2, -0.75, 1], [0.2, -0.75, 1], [-0.2, 0.85, 0], [0.2, 0.85, 0]], up: 0.78, lo: 0.82, r: 0.07, hip: 1.6,
+    eyes: [[-0.14, 2.9, -1.9], [0.14, 2.9, -1.9]], len: 4, half: 0.6, swing: 0.8,
   },
   horse: {
     body: () => [
-      sph(1, 0.5, 0.65, 1.3, 0, 1.6, 0), tube([[0, 1.9, -0.95], [0, 2.45, -1.35], [0, 2.85, -1.5]], 0.28),
-      sph(0.27, 0.8, 0.85, 2.1, 0, 2.7, -1.95), tube([[0, 1.85, 1.2], [0, 1.6, 1.6], [0, 1.15, 1.8]], 0.12),
-      cone(0.06, 0.25, 0, -0.1, 3.1, -1.6), cone(0.06, 0.25, 0, 0.1, 3.1, -1.6),
+      ...spineBody([[0.85, 1.62, 0.36, 0.4, 0.45], [0.3, 1.58, 0.36, 0.42, 0.5], [-0.3, 1.62, 0.38, 0.45, 0.5], [-0.8, 1.72, 0.36, 0.46, 0.42]]),
+      ...chain([0, 1.9, -1.0], [0, 2.65, -1.4], 0.25, 0.17, 5, 0.7),
+      ...chain([0, 2.7, -1.5], [0, 2.4, -2.05], 0.16, 0.1, 4, 0.8),
+      cone(0.05, 0.22, 0, -0.08, 2.95, -1.45), cone(0.05, 0.22, 0, 0.08, 2.95, -1.45),
+      ...chain([0, 1.85, 1.2], [0, 1.15, 1.75], 0.12, 0.08, 4),
     ],
-    legs: [[-0.25, -0.9], [0.25, -0.9], [-0.25, 0.9], [0.25, 0.9]], hip: 1.55, legR: 0.08, eyes: [[-0.17, 2.85, -2.15], [0.17, 2.85, -2.15]],
-    len: 4, half: 0.9, stride: 0.5, swing: 0.95,
+    legs: [[-0.2, -0.78, 1], [0.2, -0.78, 1], [-0.2, 0.85, 0], [0.2, 0.85, 0]], up: 0.78, lo: 0.8, r: 0.07, hip: 1.58,
+    eyes: [[-0.13, 2.68, -1.62], [0.13, 2.68, -1.62]], len: 4, half: 0.6, swing: 0.85,
   },
   elephant: {
     body: () => [
-      sph(1, 2.3, 1.9, 3.3, 0, 4.1, 0), sph(1.45, 1, 1, 1, 0, 4.9, -3.4),
-      new THREE.CircleGeometry(1.5, 14).scale(0.9, 1.2, 1).rotateY(-1.2).translate(-1.35, 4.9, -2.9),
-      new THREE.CircleGeometry(1.5, 14).scale(0.9, 1.2, 1).rotateY(1.2).translate(1.35, 4.9, -2.9),
-      cone(0.16, 1.9, -2.0, -0.55, 3.8, -4.4), cone(0.16, 1.9, -2.0, 0.55, 3.8, -4.4),
-      tube([[0, 4.6, -4.5], [0, 3.4, -5.1], [0, 2.0, -5.0], [0, 1.1, -4.4]], 0.32),
+      ...spineBody([[1.6, 3.6, 1.6, 1.6, 1.4], [0.5, 3.8, 1.9, 1.85, 1.6], [-0.7, 4.0, 1.9, 1.9, 1.5], [-1.7, 4.2, 1.6, 1.7, 1.2]]),
+      sph(1.3, 1, 1.05, 1, 0, 4.7, -3.2),
+      new THREE.CircleGeometry(1.5, 14).scale(0.9, 1.2, 1).rotateY(-1.2).translate(-1.3, 4.7, -2.7),
+      new THREE.CircleGeometry(1.5, 14).scale(0.9, 1.2, 1).rotateY(1.2).translate(1.3, 4.7, -2.7),
+      cone(0.16, 1.9, -2.0, -0.55, 3.6, -4.2), cone(0.16, 1.9, -2.0, 0.55, 3.6, -4.2),
+      tube([[0, 4.4, -4.3], [0, 3.2, -4.9], [0, 1.8, -4.8], [0, 0.9, -4.2]], 0.32),
     ],
-    legs: [[-1.2, -1.9], [1.2, -1.9], [-1.2, 1.9], [1.2, 1.9]], hip: 3.2, legR: 0.6, eyes: [[-0.85, 5.1, -4.4], [0.85, 5.1, -4.4]],
-    len: 7.5, half: 2.6, stride: 0.22, swing: 0.6,
+    legs: [[-1.0, -1.6, 1], [1.0, -1.6, 1], [-1.0, 1.7, 0], [1.0, 1.7, 0]], up: 1.6, lo: 1.5, r: 0.55, hip: 3.1,
+    eyes: [[-0.85, 4.9, -4.2], [0.85, 4.9, -4.2]], len: 7.5, half: 2.3, swing: 0.4,
   },
 };
 const GEO = {};
 
+/** A leg: thigh from the hip, shin from the knee, a hoof or paw at the end. */
+function legGeos(S) {
+  return {
+    up: new THREE.CylinderGeometry(S.r * 1.5, S.r, S.up, 8).translate(0, -S.up / 2, 0),
+    lo: new THREE.CylinderGeometry(S.r, S.r * 0.7, S.lo, 7).translate(0, -S.lo / 2, 0),
+    foot: new THREE.CylinderGeometry(S.r * 0.9, S.r * 1.05, S.r * 1.2, 7).translate(0, -S.lo - S.r * 0.4, 0),
+    joint: new THREE.SphereGeometry(S.r * 1.15, 8, 6),
+  };
+}
+
 function buildAnimal(kind) {
   const S = SPECIES[kind];
-  GEO[kind] = GEO[kind] || { body: merge(S.body()), leg: new THREE.CylinderGeometry(S.legR, S.legR * 0.75, S.hip, 7).translate(0, -S.hip / 2, 0) };
+  GEO[kind] = GEO[kind] || { body: merge(S.body()), ...legGeos(S) };
+  const G = GEO[kind];
   const mat = herdMat();
-    mat.userData.len.value = S.len / 2;
+  mat.userData.len.value = S.len / 2;
   const g = new THREE.Group();
-  g.add(new THREE.Mesh(GEO[kind].body, mat));
-  const legs = S.legs.map(([x, z]) => {
-    const pivot = new THREE.Group();
-    pivot.position.set(x, S.hip, z);
-    pivot.add(new THREE.Mesh(GEO[kind].leg, mat));
-    g.add(pivot);
-    return pivot;
+  g.add(new THREE.Mesh(G.body, mat));
+  const legs = S.legs.map(([x, z, front]) => {
+    const hip = new THREE.Group();
+    hip.position.set(x, S.hip, z);
+    hip.add(new THREE.Mesh(G.up, mat));
+    const knee = new THREE.Group();
+    knee.position.y = -S.up;
+    knee.add(new THREE.Mesh(G.joint, mat), new THREE.Mesh(G.lo, mat), new THREE.Mesh(G.foot, mat));
+    hip.add(knee);
+    g.add(hip);
+    return { hip, knee, front: !!front };
   });
   const eyes = S.eyes.map(([x, y, z]) => {
     const e = new THREE.Mesh(new THREE.SphereGeometry(S.half * 0.06 + 0.03, 6, 5), EYE_MAT);
@@ -169,16 +218,16 @@ function herdPlan() {
   const pick = (list) => list[Math.floor(Math.random() * list.length)];
   for (const side of [-1, 1]) {
     // at the edge of the bridge: big wolves and horses, close enough to touch
-    for (let k = 0; k < 6; k++) plan.push({ kind: pick(['wolf', 'wolf', 'horse']), d: side * (5 + Math.random() * 1.5), scale: 1.6 + Math.random() * 0.5, rise: -0.5, s: -60 + k * 25 });
+    for (let k = 0; k < 6; k++) plan.push({ kind: pick(['wolf', 'wolf', 'horse']), d: side * (5 + Math.random() * 1.5), scale: 1.6 + Math.random() * 0.5, rise: -0.6, s: -60 + k * 25, rank: k * 0.05 });
     // the herd proper: bodies three to seven times life size, a wall rising away from you
     for (let row = 0; row < 4; row++) {
       for (let k = 0; k < 7; k++) {
-        plan.push({ kind: pick(['bison', 'bison', 'bear', 'elk', 'horse']), d: side * (11 + row * 9 + Math.random() * 3), scale: 3 + row * 1.3 + Math.random(), rise: -6 + row * 3 + Math.random() * 3, s: -60 + (k / 7) * 150 + Math.random() * 12 });
+        plan.push({ kind: pick(['bison', 'bison', 'bear', 'elk', 'horse']), d: side * (11 + row * 9 + Math.random() * 3), scale: 3 + row * 1.3 + Math.random(), rise: -0.75, s: -60 + (k / 7) * 150 + Math.random() * 12, rank: 0.12 + row * 0.14 + Math.random() * 0.14 });
       }
     }
     // titans: heads above the top of the screen, striding through the fog
     for (let k = 0; k < 5; k++) {
-      plan.push({ kind: k === 2 ? 'elephant' : pick(['bison', 'elk', 'bear']), d: side * (55 + Math.random() * 25), scale: k === 2 ? 9 : 11 + Math.random() * 6, rise: -25 + Math.random() * 10, s: -40 + k * 30 });
+      plan.push({ kind: k === 2 ? 'elephant' : pick(['bison', 'elk', 'bear']), d: side * (55 + Math.random() * 25), scale: k === 2 ? 9 : 11 + Math.random() * 6, rise: -0.75, s: -40 + k * 30, rank: 0.68 + Math.random() * 0.22 });
     }
   }
   return plan;
@@ -197,7 +246,7 @@ export function buildHerdRoad(ringS) {
     const u = i / M;
     const x = HERD_ORIGIN.x + u * HERD_LEN;
     const z = HERD_ORIGIN.z + 70 * Math.sin(u * Math.PI * 2.2) + 25 * Math.sin(u * Math.PI * 7.1);
-    const y = 40 + 9 * Math.sin(u * Math.PI * 3) + 3 * Math.sin(u * Math.PI * 13);
+    const y = 40 + 0.6 * Math.sin(u * Math.PI * 9);
     raw.push([x, z, y, u]);
   }
   const road = new Spur({ kind: 'herd', side: 1, sA: ringS, sB: ringS, uSep: 0, raw });
@@ -206,15 +255,100 @@ export function buildHerdRoad(ringS) {
   return road;
 }
 
-/** The bridge: a strip of dark stone a lane and a half wide, a thin line of light down its middle. */
+/** Pale old concrete: stains, cracks, potholes, and edges that have crumbled away. */
+function brokenRoadTexture() {
+  const W = 256;
+  const H = 1024;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const g = c.getContext('2d');
+  g.fillStyle = '#34383c';
+  g.fillRect(0, 0, W, H);
+  // lighter worn patches and grit
+  for (let k = 0; k < 4000; k++) { g.fillStyle = `rgba(${150 + Math.random() * 60},${150 + Math.random() * 60},${150 + Math.random() * 60},${Math.random() * 0.08})`; g.fillRect(Math.random() * W, Math.random() * H, 1 + Math.random() * 2, 1 + Math.random() * 2); }
+  // grime and wet stains
+  for (let k = 0; k < 90; k++) {
+    const x = Math.random() * W, y = Math.random() * H, r = 10 + Math.random() * 60;
+    const gr = g.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, `rgba(10,11,12,${0.2 + Math.random() * 0.4})`);
+    gr.addColorStop(1, 'rgba(10,11,12,0)');
+    g.fillStyle = gr;
+    g.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  // tyre-dark track down the middle
+  g.fillStyle = 'rgba(30,32,34,0.18)';
+  g.fillRect(W * 0.3, 0, W * 0.4, H);
+  // potholes
+  for (let k = 0; k < 9; k++) {
+    const x = 30 + Math.random() * (W - 60), y = Math.random() * H;
+    g.fillStyle = 'rgba(6,7,8,0.95)';
+    g.beginPath();
+    g.ellipse(x, y, 6 + Math.random() * 16, 5 + Math.random() * 12, Math.random() * 3, 0, Math.PI * 2);
+    g.fill();
+  }
+  // cracks, branching
+  g.strokeStyle = 'rgba(8,9,10,0.85)';
+  for (let k = 0; k < 40; k++) {
+    let x = Math.random() * W, y = Math.random() * H;
+    g.lineWidth = 0.6 + Math.random() * 1.6;
+    g.beginPath();
+    g.moveTo(x, y);
+    for (let i = 0; i < 7; i++) { x += (Math.random() - 0.5) * 40; y += (Math.random() - 0.3) * 50; g.lineTo(x, y); }
+    g.stroke();
+  }
+  // crumbled edges: bite away the sides, deeper in places
+  const img = g.getImageData(0, 0, W, H);
+  for (let y = 0; y < H; y++) {
+    const bite = (side) => 6 + 18 * Math.max(0, Math.sin(y * 0.021 + side * 2.1) * Math.sin(y * 0.0073 + side)) + Math.random() * 7;
+    const l = bite(0);
+    const r = bite(1);
+    for (let x = 0; x < W; x++) if (x < l || x > W - r) img.data[(y * W + x) * 4 + 3] = 0;
+  }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
+/** The bridge: a strip of bright broken concrete a lane and a half wide over the void. */
 export function herdRoadMesh(road) {
   const g = new THREE.Group();
-  const deck = new THREE.MeshStandardMaterial({ color: 0x15191e, roughness: 0.35, metalness: 0.2 });
-  const line = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.7, 0.85, 1.1) });
-  g.add(new THREE.Mesh(spurRibbon(road, 0, road.N - 2, -3.2, 3.2, 0.04, -1.6, 3), deck));
+  const tex = brokenRoadTexture();
+  const pos = [];
+  const uv = [];
+  const A = {};
+  const B = {};
+  const HWB = 3.6;
+  for (let t = 0; t < road.N - 3; t += 3) {
+    road.sample(t, A);
+    road.sample(t + 3, B);
+    const c = (P, d) => [P.x + P.nx * d, P.y + 0.04, P.z + P.nz * d];
+    const a0 = c(A, -HWB), a1 = c(A, HWB), b0 = c(B, -HWB), b1 = c(B, HWB);
+    const v0 = t / 40, v1 = (t + 3) / 40;
+    pos.push(...a0, ...b0, ...b1, ...a0, ...b1, ...a1);
+    uv.push(0, v0, 0, v1, 1, v1, 0, v0, 1, v1, 1, v0);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.computeVertexNormals();
+  const deck = new THREE.MeshStandardMaterial({
+    // wet: it holds the tail lights and the sky
+    map: tex, alphaTest: 0.5, color: 0xffffff, roughness: 0.28, metalness: 0.15, envMapIntensity: 1.2, side: THREE.DoubleSide,
+  });
+  g.add(new THREE.Mesh(geo, deck));
+  // the slab's broken underside
+  g.add(new THREE.Mesh(spurRibbon(road, 0, road.N - 2, -2.9, 2.9, -0.02, -1.4, 3), new THREE.MeshStandardMaterial({ color: 0x2a2e33, roughness: 1 })));
+  // a worn centre line, missing in stretches
   const dashes = [];
-  for (let t = 0; t < road.N - 6; t += 10) dashes.push(spurRibbon(road, t, t + 4, -0.07, 0.07, 0.07, 0.06, 4));
-  g.add(new THREE.Mesh(merge(dashes), line));
+  for (let t = 0; t < road.N - 6; t += 10) if (Math.sin(t * 0.013) > -0.4 && Math.random() > 0.2) dashes.push(spurRibbon(road, t, t + 4, -0.08, 0.08, 0.06, 0.05, 4));
+  const plain = new THREE.Mesh(new THREE.PlaneGeometry(6000, 3000).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x0d1013, roughness: 0.55, metalness: 0.1, envMapIntensity: 0.6 }));
+  plain.position.set(HERD_ORIGIN.x + HERD_LEN / 2, 39.25, HERD_ORIGIN.z);
+  g.add(plain);
+  g.add(new THREE.Mesh(merge(dashes), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.85, 0.86, 0.84) })));
   return g;
 }
 
@@ -229,7 +363,7 @@ export class Stampede {
       const a = buildAnimal(p.kind);
       a.g.scale.setScalar(p.scale);
       this.group.add(a.g);
-      return { ...a, d: p.d, scaleK: p.scale, rise: p.rise, sOff: p.s, phase: Math.random() * 6, pace: 1.5 + Math.random() * 0.9, wave: 0.6 + Math.random() * 0.9, seed: i * 1.7 };
+      return { ...a, rank: p.rank, d: p.d, scaleK: p.scale, rise: p.rise, sOff: p.s, phase: Math.random() * 6, pace: 1.5 + Math.random() * 0.9, wave: 0.6 + Math.random() * 0.9, seed: i * 1.7 };
     });
     this.makeFlakes();
     this.makeDust();
@@ -324,13 +458,18 @@ export class Stampede {
     const out = { w: this.w, near: 0 };
     if (!this.group.visible) return out;
     if (h) this.t = h.t;
+    // a crescendo: frail and few at the start of the bridge, everything by the end
+    const k = THREE.MathUtils.clamp((this.t || 0) / (road.N * 0.8), 0, 1);
+    const I = 0.14 + 0.86 * k * k * (3 - 2 * k);
+    this.intensity = I;
+    out.intensity = I;
     const C = road.sample(this.t || 0);
     const along = vehicle.vel.x * C.tx + vehicle.vel.z * C.tz;
     const pace = THREE.MathUtils.clamp(Math.max(along, 0), 18, 48);
     const Q = {};
     for (const a of this.herd) {
       // they charge past you, faster than the car, and the herd never ends
-      const run = Math.max(pace, 26) * a.pace * (1 + 0.1 * Math.sin(time * 0.31 + a.phase));
+      const run = Math.max(pace, 26) * a.pace * (0.7 + 0.55 * I) * (1 + 0.1 * Math.sin(time * 0.31 + a.phase));
       a.sOff += (run - along) * dt;
       a.speedNow = run;
       const span = 150 + a.scaleK * 6;
@@ -343,12 +482,16 @@ export class Stampede {
       const wave = Math.sin(time * 1.15 - a.sOff * 0.035 - Math.abs(a.d) * 0.02);
       const breathe = 0.62 + 0.38 * wave;
       const byLens = Math.abs(a.sOff + 8) < a.len * a.scaleK * 0.6 && Math.abs(a.d) < 4 + a.half * a.scaleK ? 0.3 : 1;
-      const form = Math.max(0.3 * ends * this.w, byLens * ends * this.w * THREE.MathUtils.clamp(breathe, 0, 1));
+      const arrived = THREE.MathUtils.smoothstep(I, a.rank, a.rank + 0.08);
+      const frail = 0.45 + 0.55 * I;
+      const form = arrived * frail * Math.max(0.3 * ends * this.w, byLens * ends * this.w * THREE.MathUtils.clamp(breathe, 0, 1));
       a.mat.userData.form.value = form;
+      // as the wave crests, light rakes the body for a moment: a flash of what it is
+      a.mat.userData.flash.value = Math.pow(Math.max(0, wave), 10);
       a.g.visible = form > 0.02;
       if (!a.g.visible) continue;
       road.sample((this.t || 0) + a.sOff, Q);
-      const y = Q.y + a.rise * (1 + 0.15 * Math.sin(time * 0.4 + a.seed));
+      const y = Q.y + a.rise;
       // the herd gallops in step: one beat, every body on it
       this.beat = (this.beat || 0) + dt * 0.5 / this.herd.length;
       a.phase = time * 7.5 / Math.sqrt(a.scaleK) + (a.d > 0 ? 0 : Math.PI * 0.5);
@@ -356,11 +499,18 @@ export class Stampede {
       a.g.position.set(Q.x + Q.nx * a.d, y + bob, Q.z + Q.nz * a.d);
       a.g.rotation.set(Math.sin(a.phase * 2) * 0.05, -Q.heading, 0);
       // smeared by its own speed, and now and then it skips like a bad memory
-      a.g.scale.set(a.scaleK, a.scaleK, a.scaleK * (1 + 1.2 * (1 - form)));
-      a.legs.forEach((l, i) => { l.rotation.x = Math.sin(a.phase + (i % 2 ? Math.PI : 0) + (i > 1 ? 0.9 : 0)) * a.swing; });
+      const grow = a.scaleK * (0.5 + 0.5 * Math.min(1, I + 0.15));
+      a.g.scale.set(grow, grow, grow * (1 + 1.2 * (1 - form)));
+      // a rotary gallop: the two fronts land close together, then the two hinds
+      a.legs.forEach((l, i) => {
+        const p = a.phase + [0, 0.45, Math.PI, Math.PI + 0.45][i];
+        l.hip.rotation.x = Math.sin(p) * a.swing;
+        const lift = Math.max(0, Math.sin(p + 1.1));
+        l.knee.rotation.x = l.front ? -lift * 1.4 : lift * 1.0;
+      });
       const lit = form > 0.35 && Math.sin(time * 7 + a.seed * 3) > -0.9;
       a.eyes.forEach((e) => { e.visible = lit; });
-      const rate = Math.max(0, 1.1 - form) * (a.kind === 'wolf' ? 40 : 110) * this.w * Math.min(3, Math.sqrt(a.scaleK));
+      const rate = (0.3 + I) * Math.max(0, 1.1 - form) * (a.kind === 'wolf' ? 40 : 110) * this.w * Math.min(3, Math.sqrt(a.scaleK));
       const n = Math.floor(rate * dt + Math.random());
       if (n > 0) this.shed(a, n, Q);
       if (Math.random() < dt * 0.8 * this.w) this.puff(this.embers, a.g.position.x, y + a.hip * a.scaleK, a.g.position.z, 3, a.half * a.scaleK, 2.5);

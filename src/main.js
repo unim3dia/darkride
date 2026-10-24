@@ -360,7 +360,7 @@ function leaveHerd() {
   warmStart(chunks, vehicle.s);
 }
 // the herd's air: cold blue fog the animals come apart in
-const DUST_PALETTE = { fog: 0x6c829a, skyTop: 0x2a3848, skyHorizon: 0x8ca2b8, glow: 0x9ab2c8, light: 0.45, exposure: 1.0, fogMul: 0.9, grain: 1.8, rain: 0.45 };
+const DUST_PALETTE = { fog: 0x56687e, skyTop: 0x1a2430, skyHorizon: 0x6a7e94, glow: 0x7c92a8, light: 0.42, exposure: 1.05, fogMul: 1.05, grain: 1.7, rain: 0.8 };
 const ETHER_CHOIR = forks.pockets[forks.spurs.findIndex((sp) => sp.kind === 'ether')].choir;
 warmStart(chunks, vehicle.s);
 rig.view = 1; // the title shot looks back at the driver
@@ -642,6 +642,7 @@ function tick(now) {
   const onHerd = vehicle.spurHit && vehicle.spurHit.spur === herdRoad ? vehicle.spurHit : null;
   if (onHerd && onHerd.t > herdRoad.N - 12) leaveHerd();
   const herd = stampede.update(dt, state.time, vehicle, herdRoad);
+  rig.herd = herd.w;
   if (herd.w > 0.01 && !ambient.pocket) ambient.pocket = { weight: Math.min(1, herd.w * 1.2), palette: DUST_PALETTE };
   // the bridge is a strip: lean on its edge and the dark leans back
   if (onHerd && Math.abs(onHerd.d) > 2.4 && !vehicle.airborne) {
@@ -652,7 +653,7 @@ function tick(now) {
     const into = (vehicle.vel.x * onHerd.nx + vehicle.vel.z * onHerd.nz) * side;
     if (into > 0) { vehicle.vel.x -= onHerd.nx * side * into; vehicle.vel.z -= onHerd.nz * side * into; }
   }
-  audio.stampede(herd.w, herd.near);
+  audio.stampede(herd.w, herd.near, herd.intensity || 0);
   if (herd.w > 0.5 && !state.herdShown) { state.herdShown = true; screens.showCard('THE STAMPEDE', 'they were running long before the road'); }
   if (herd.w < 0.05) state.herdShown = false;
   if (pk.pocket && pk.weight > 0.55 && state.pocketShown !== pk.pocket) {

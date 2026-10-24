@@ -402,31 +402,51 @@ export class Audio {
     this.menuTimer = setInterval(schedule, 100);
   }
 
-  /** Hooves: a ground-shaking roar, a gallop of thumps, and now and then a trumpet. */
-  stampede(w, near) {
+  /**
+   * Hooves, building: at first a few light patters and glassy chimes in the
+   * fog; by the end a ground-shaking roar, a gallop like rolling thunder, a
+   * rising drone underneath, and trumpets calling over it.
+   */
+  stampede(w, near, intensity = 1) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
+    const I = intensity;
     if (!this.herdBed) {
       this.herdBed = this.gain(0);
       this.loopNoise().connect(this.filter('lowpass', 160, 0.8)).connect(this.herdBed).connect(this.master);
       this.herdDust = this.gain(0);
       this.loopNoise().connect(this.filter('bandpass', 900, 0.5)).connect(this.herdDust).connect(this.master);
+      this.herdDrone = [this.ctx.createOscillator(), this.ctx.createOscillator()];
+      this.herdDroneGain = this.gain(0);
+      const df = this.filter('lowpass', 300, 1.5);
+      this.herdDrone.forEach((o, i) => { o.type = 'sawtooth'; o.frequency.value = 36.71 * (i ? 1.5 : 1); o.connect(df); o.start(); });
+      df.connect(this.herdDroneGain).connect(this.master);
+      this.herdDroneGain.connect(this.verbIn);
       this.nextHoof = 0;
       this.nextCall = t + 3;
+      this.nextChime = 0;
     }
-    this.herdBed.gain.setTargetAtTime(w * (0.12 + near * 0.12), t, 0.3);
-    this.herdDust.gain.setTargetAtTime(w * 0.025, t, 0.3);
+    this.herdBed.gain.setTargetAtTime(w * (0.02 + I * 0.16 + near * 0.08 * I), t, 0.4);
+    this.herdDust.gain.setTargetAtTime(w * (0.006 + I * 0.03), t, 0.4);
+    this.herdDroneGain.gain.setTargetAtTime(w * I * I * 0.06, t, 0.6);
+    this.herdDrone.forEach((o, i) => o.frequency.setTargetAtTime(36.71 * (i ? 1.5 : 1) * (1 + I * 0.5), t, 1.2));
     if (w < 0.05) return;
     if (t > this.nextHoof) {
-      this.tone(48 + Math.random() * 20, (0.1 + near * 0.14) * w, 0.14, { to: 32, wet: 0.15 });
-      this.nextHoof = t + 0.07 + Math.random() * 0.12;
+      this.tone(48 + Math.random() * 20 + (1 - I) * 60, (0.03 + I * 0.16 + near * 0.08 * I) * w, 0.14, { to: 32, wet: 0.15 + (1 - I) * 0.5 });
+      this.nextHoof = t + (0.5 - I * 0.43) * (0.6 + Math.random() * 0.8);
     }
-    if (t > this.nextCall) {
-      // an elephant somewhere in the dust
+    // the fragile beginning: high glass in the fog
+    if (I < 0.55 && t > this.nextChime) {
+      const f = [880, 1046.5, 1174.7, 1318.5, 1568][Math.floor(Math.random() * 5)];
+      this.tone(f, 0.02 * w * (1 - I * 1.6), 1.6, { wet: 0.9, attack: 0.01 });
+      this.nextChime = t + 0.7 + Math.random() * 1.6;
+    }
+    if (I > 0.35 && t > this.nextCall) {
       const f = 380 + Math.random() * 160;
-      this.tone(f, 0.05 * w, 0.9, { type: 'sawtooth', to: f * 1.35, wet: 0.6, attack: 0.08 });
-      this.tone(f * 1.5, 0.025 * w, 0.8, { type: 'sawtooth', to: f * 1.9, wet: 0.6, attack: 0.1 });
-      this.nextCall = t + 4 + Math.random() * 7;
+      const v = (0.02 + I * 0.05) * w;
+      this.tone(f, v, 0.9, { type: 'sawtooth', to: f * 1.35, wet: 0.6, attack: 0.08 });
+      this.tone(f * 1.5, v * 0.5, 0.8, { type: 'sawtooth', to: f * 1.9, wet: 0.6, attack: 0.1 });
+      this.nextCall = t + (9 - I * 6) * (0.5 + Math.random());
     }
   }
 

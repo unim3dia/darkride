@@ -75,8 +75,10 @@ export class CameraRig {
     } else {
       const back = 7.8 + speed * 0.05 + (v.airborne ? 1.5 : 0);
       // set off to the right of the car: a three-quarter view down its flank, not a dead-center bumper shot
-      desired = vp.clone().addScaledVector(f, -back).addScaledVector(r, 1.8).setY(carY + 2.0 + (v.airborne ? 0.9 : 0));
-      look.copy(vp).addScaledVector(f, 7).addScaledVector(r, 0.2).setY(carY + 1.1);
+      // (in the herd's country: lower and looking up, so the beasts take the frame)
+      const h = this.herd || 0;
+      desired = vp.clone().addScaledVector(f, -back).addScaledVector(r, 1.8).setY(carY + 2.0 - h * 0.7 + (v.airborne ? 0.9 : 0));
+      look.copy(vp).addScaledVector(f, 7).addScaledVector(r, 0.2).setY(carY + 1.1 + h * 2.6);
       fov = 56 + speed * 0.32;
       stiffness = 7;
       model.driver.visible = true;
