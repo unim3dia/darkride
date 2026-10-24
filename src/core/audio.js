@@ -286,6 +286,33 @@ export class Audio {
     this.windFilter.frequency.setTargetAtTime(300 + speed * 22, t, 0.2);
   }
 
+  /** The drive-in's speakers: the film's engines rise and fall, a crash cracks. */
+  movie(level, roar, hit) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    if (!this.movieBed) {
+      this.movieBed = this.gain(0);
+      this.movieFilter = this.filter('bandpass', 400, 0.9);
+      this.loopNoise().connect(this.movieFilter).connect(this.filter('lowpass', 2400)).connect(this.movieBed).connect(this.master);
+      this.movieEng = this.ctx.createOscillator();
+      this.movieEng.type = 'sawtooth';
+      this.movieEngGain = this.gain(0);
+      this.movieEng.connect(this.filter('lowpass', 500, 2)).connect(this.movieEngGain).connect(this.master);
+      this.movieEng.start();
+      this.movieHit = 0;
+    }
+    // tinny: it's coming out of a speaker on a post
+    this.movieBed.gain.setTargetAtTime(level * (0.006 + roar * 0.035), t, 0.08);
+    this.movieFilter.frequency.setTargetAtTime(500 + roar * 900, t, 0.1);
+    this.movieEng.frequency.setTargetAtTime(70 + roar * 60, t, 0.1);
+    this.movieEngGain.gain.setTargetAtTime(level * roar * 0.03, t, 0.08);
+    if (hit > 0.95 && this.movieHit < 0.95 && level > 0.05) {
+      this.burst('lowpass', 900, 0.25 * level, 0.5, 0.7, 0.4);
+      this.burst('highpass', 2500, 0.08 * level, 0.25, 0.7, 0.4);
+    }
+    this.movieHit = hit;
+  }
+
   /** A cave: a hollow, low room tone and the odd drip ringing off the rock. */
   cave(w) {
     if (!this.ctx) return;

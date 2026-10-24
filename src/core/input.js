@@ -26,6 +26,7 @@ window.addEventListener('blur', () => held.clear());
 const any = (codes) => codes.some((c) => held.has(c));
 
 let padHopPrev = false;
+let rideLatch = false;
 let padViewPrev = false;
 
 export function readInput() {
@@ -61,7 +62,13 @@ export function readInput() {
     liftRight = liftRight || !!pad.buttons[15]?.pressed;
   }
 
+  // hold R, I, D and E together: the ride takes you somewhere else (once per press)
+  const ride = ['KeyR', 'KeyI', 'KeyD', 'KeyE'].every((c) => held.has(c));
+  const warp = ride && !rideLatch;
+  rideLatch = ride;
+
   const out = {
+    warp,
     throttle, brake, steer, hopHeld, hopPressed, view, liftFront, liftLeft, liftRight,
     mute: pressed.has('KeyM'), any: pressed.size > 0,
   };

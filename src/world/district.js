@@ -13,6 +13,7 @@ import { glyph } from './glyphs.js';
 import { neonTexture } from './neon.js';
 import { buildStaticCar } from '../player/carModel.js';
 import { makeBody } from './bodies.js';
+import { inLotBlock, layoutLot, seatRider } from './driveIn.js';
 import {
   DMATS, boxUV, boxAt, warehouse, container, tank, fence, trestle, gasStation, motel, fireBarrel, rubble, ruinedWall,
 } from './districtKit.js';
@@ -182,6 +183,7 @@ export class District {
         const pts = [[0, 0], [-1, -1], [1, -1], [-1, 1], [1, 1], [0, -1], [0, 1], [-1, 0], [1, 0]];
         const roadside = pts.some(([a, b]) => this.nearRoad(cu + a * HALF, cv + b * HALF, 12));
         if (roadside) { this.roadsideLot(K, cu, cv); continue; }
+        if (this.name === 'underpass' && inLotBlock(cu, cv)) continue; // the drive-in takes these
         const edge = Math.abs(cu) === 280 || Math.abs(cv) === 245;
         if (edge) { this.wallBlock(K, cu, cv); continue; }
         // sidewalk apron around every real block
@@ -193,6 +195,7 @@ export class District {
       }
     }
 
+    if (this.name === 'underpass') this.driveIn = layoutLot(this, K);
     trestle(K, this.trestleV, -this.DU - 40, this.DU + 40, TRESTLE_Y);
     this.perimeter(K);
     this.roadside(K);
@@ -476,6 +479,7 @@ export class District {
       car.rotation.y = p.yaw;
       this.world.add(car);
       this.chunk.bodies.push(makeBody(car, 0));
+      if (p.rider) seatRider(car);
       if (p.sitter) this.watcherSpots.push({ u: p.u + 2.2, v: p.v, y: 0.55, faceU: 0, faceV: -1, sit: true });
     }
     for (const b of this.barrels) {

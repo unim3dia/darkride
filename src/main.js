@@ -17,6 +17,7 @@ import { LOOP_LEN } from './world/track.js';
 import { Answerers } from './world/answerers.js';
 import { Trail } from './world/trail.js';
 import { Forks } from './world/forks.js';
+import { DriveInMovie, LOT } from './world/driveIn.js';
 import { collidersFrom, updateBodies } from './world/bodies.js';
 import { Vehicle } from './player/vehicle.js';
 import { CarView } from './player/carView.js';
@@ -74,6 +75,62 @@ rig.clip = (from, to) => {
 
 // underground: near-black air, the headlights doing all the work
 const CAVE_PALETTE = { fog: 0x030303, skyTop: 0x000000, skyHorizon: 0x030303, glow: 0x060606, light: 0.025, exposure: 0.72, fogMul: 1.5, grain: 1.4, rain: 0 };
+
+let driveInTrail = null;
+
+// ---------------------------------------------------------------- R I D E: somewhere else
+
+/** Every place the ride can drop you, as a function that puts the car there. */
+function warpSpots() {
+  const spots = [];
+  // the middle of each zone on the ring
+  const seen = new Map();
+  for (let s = 0; s < LOOP_LEN; s += 40) {
+    const z = zoneIndexAt(s);
+    if (!seen.has(z)) seen.set(z, []);
+    seen.get(z).push(s);
+  }
+  for (const [z, ss] of seen) {
+    if (ZONES[z].kind === 'district') continue;
+    const s = ss[Math.floor(ss.length / 2)];
+    spots.push({ name: `ring ${z}`, go: () => vehicle.reset(s, 0, 0, 22) });
+  }
+  // out on each ramp, deep in its pocket world
+  forks.spurs.forEach((sp) => {
+    let t = 0;
+    while (t < sp.N - 1 && sp.U[t] < 0.35) t++;
+    spots.push({ name: sp.kind, go: () => { const p = sp.sample(t); vehicle.placeAt(p.x, p.y + 0.4, p.z, p.heading, 18); } });
+  });
+  // down in each cave
+  forks.detours.forEach((det) => {
+    spots.push({ name: det.name, go: () => { const p = det.sample(det.tCaveA + 25); vehicle.placeAt(p.x, p.y + 0.3, p.z, p.heading, 12); } });
+  });
+  // the drive-in, nosed toward the screen; the middle of the Narrows
+  spots.push({ name: 'drive-in', go: () => { const p = district.toWorld(LOT.u1 - 30, LOT.aisleV); vehicle.placeAt(p.x, 0, p.z, -district.yawToward(-1, 0), 4); } });
+  spots.push({ name: 'narrows', go: () => vehicle.reset(narrows.s0, 0, 0, 16) });
+  return spots;
+}
+let WARPS = null;
+let lastWarp = -1;
+
+function warp() {
+  WARPS = WARPS || warpSpots();
+  let i = Math.floor(Math.random() * WARPS.length);
+  if (i === lastWarp) i = (i + 1 + Math.floor(Math.random() * (WARPS.length - 1))) % WARPS.length;
+  lastWarp = i;
+  WARPS[i].go();
+  state.lastWarp = WARPS[i].name;
+  state.fall = null;
+  state.zone = -1;
+  state.pocketShown = null;
+  state.caveShown = null;
+  rig.offset = undefined;
+  rig.reach = 1;
+  warmStart(chunks, vehicle.s);
+  state.aberration = 1.2;
+  rig.shake(0.4);
+  audio.launch(0.9);
+}
 
 const state = {
   mode: 'title',
@@ -159,6 +216,21 @@ const trail = new Trail(scene, (() => {
 {
   const p = sample(district.s0 + START_U + 60);
   district.signAt('RING ROAD', '↑ bridge straight ahead', new THREE.Vector3(p.x + p.nx * (ROAD.HALF_WIDTH + 2.5), 5.2, p.z + p.nz * (ROAD.HALF_WIDTH + 2.5)), Math.atan2(-p.tx, -p.tz) + 0.35, [0xd9e2e6, 0x9fb4c4]);
+}
+// left before the bridge: a neon arrow, chevrons down the avenue, and the drive-in
+const movie = new DriveInMovie(district, district.driveIn.booth);
+{
+  const u = 228;
+  const v = district.roadV(u) - (ROAD.HALF_WIDTH + 4);
+  district.signAt('DRIVE-IN', '← races tonight', district.toWorld(u, v, 5.4), district.faceYaw(-1, -0.45), [0xffd27a, 0xff4a3a]);
+  const route = [[226, district.roadV(226) - 5], [240, district.roadV(240) - 10], [245, -70], [245, LOT.aisleV], [LOT.u1 - 4, LOT.aisleV], [LOT.u1 - 30, LOT.aisleV]];
+  const pts = [];
+  for (let i = 0; i < route.length - 1; i++) {
+    const [a, b] = [route[i], route[i + 1]];
+    const n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 6);
+    for (let k = 0; k < n; k++) pts.push(district.toWorld(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n, 0.04));
+  }
+  driveInTrail = new Trail(scene, pts, { persistent: true });
 }
 warmStart(chunks, vehicle.s);
 rig.view = 1; // the title shot looks back at the driver
@@ -373,6 +445,7 @@ function tick(now) {
   if (state.mode === 'title' && input.any) startRide();
   if (input.mute) audio.toggleMute();
   if (input.view && state.mode === 'ride') rig.cycle();
+  if (input.warp && state.mode === 'ride') warp();
 
   const riding = state.mode === 'ride' && !state.fall;
   const drive = riding ? input : { throttle: 0, brake: 0, steer: 0, hopHeld: false, hopPressed: false };
@@ -410,7 +483,7 @@ function tick(now) {
   catchUniforms.uSrc.value.copy(vehicle.pos).addScaledVector(catchUniforms.uDir.value, 2.9).y += 0.8;
 
   const z = zoneIndexAt(vehicle.s);
-  if (z !== state.zone && state.mode === 'ride' && !pk.pocket && !pk.detour) {
+  if (z !== state.zone && state.mode === 'ride' && !pk.pocket && pk.cave < 0.01) {
     state.zone = z;
     screens.showZone(z);
     audio.setZone(z);
@@ -429,6 +502,9 @@ function tick(now) {
   const inTown = !!placeAt(vehicle.pos.x, vehicle.pos.z, 30) || forks.weight > 0.05;
   mist.update(dt, vehicle, camera, scene.fog.color, ambient.flash, inTown);
   trail.update(dt, state.time, vehicle);
+  driveInTrail.update(dt, state.time, vehicle);
+  const film = movie.update(dt, renderer, vehicle.pos);
+  audio.movie(film.level, film.roar, film.hit);
   fogLayers.update(state.time, camera, vehicle.groundY, scene.fog.color, ambient.fogThick, inTown);
   renderer.toneMappingExposure += (ambient.exposure * 1.05 - renderer.toneMappingExposure) * Math.min(1, raw);
   const rainHere = ambient.rain * (1 - (state.cave || 0));
