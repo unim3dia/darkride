@@ -11,9 +11,15 @@ const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a
 
 export class Spur {
   constructor(def) {
-    const { at: fraction, ...rest } = def; // `at` is the config's loop fraction; at() is a method here
+    const { at: fraction, raw, ...rest } = def; // `at` is the config's loop fraction; at() is a method here
     Object.assign(this, rest);
     this.fraction = fraction;
+    this.openings = [];  // [t0, t1, side]: stretches where a wall gives way (a branch leaves here)
+    this.build(raw || this.rampPoints());
+  }
+
+  /** The off-ramp's own shape: out across the void on a sine bump, and back. [x, z, y, u] per point. */
+  rampPoints() {
     const RAW = 3200;
     const span = this.sB - this.sA;
     const eA = elevation(this.sA);
@@ -32,6 +38,11 @@ export class Spur {
       const y = S.y * (1 - k) + (eA + (eB - eA) * u + this.lift * bump + hills) * k;
       raw.push([S.x + S.nx * d, S.z + S.nz * d, y, u]);
     }
+    return raw;
+  }
+
+  /** Resample raw points to 1 m stations and derive frames, bounds, separation points. */
+  build(raw) {
     const cum = [0];
     for (let i = 1; i < raw.length; i++) cum.push(cum[i - 1] + Math.hypot(raw[i][0] - raw[i - 1][0], raw[i][1] - raw[i - 1][1]));
     this.len = cum[cum.length - 1];
@@ -91,7 +102,9 @@ export class Spur {
     return out.set(P.x + P.nx * d, P.y + yRel, P.z + P.nz * d);
   }
 
-  walled(t) {
+  /** Is there a wall on this `side` (sign of d) at t? */
+  walled(t, side = 0) {
+    for (const [a, b, sd] of this.openings) if (t > a && t < b && (!side || sd === side)) return false;
     return t > this.tSepA && t < this.tSepB;
   }
 

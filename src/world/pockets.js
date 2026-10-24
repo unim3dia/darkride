@@ -33,7 +33,11 @@ const middle = (spur, a = 0.25, b = 0.75) => {
 function supports(spur, geos) {
   for (let t = spur.tSepA + 20; t < spur.tSepB - 20; t += 32) {
     if (spur.U[Math.floor(t)] > 0.15 && spur.U[Math.floor(t)] < 0.85) continue; // deep in, nothing holds it up
-    for (const s of [-1, 1]) geos.push(spurBox(spur, 1.4, 60, 1.4, t, s * 5.5, -61.2));
+    for (const s of [-1, 1]) {
+      const p = spur.at(t, s * 5.5, 0);
+      if (spur.keepClear && spur.keepClear(p.x, p.z)) continue; // a detour passes under here
+      geos.push(spurBox(spur, 1.4, 60, 1.4, t, s * 5.5, -61.2));
+    }
   }
 }
 

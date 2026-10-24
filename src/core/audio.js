@@ -280,8 +280,31 @@ export class Audio {
     const roll = airborne ? 0 : Math.min(1, speed / 30);
     this.tires.gain.setTargetAtTime(roll * 0.13, t, airborne ? 0.02 : 0.08);
     this.tireFilter.frequency.setTargetAtTime(700 + speed * 45, t, 0.1);
-    this.wind.gain.setTargetAtTime(Math.min(0.12, speed * 0.0028) + (this.windBoost || 0) * 0.09, t, 0.4);
+    const still = 1 - 0.88 * (this.caveW || 0); // underground, the wind can't reach you
+    this.wind.gain.setTargetAtTime((Math.min(0.12, speed * 0.0028) + (this.windBoost || 0) * 0.09) * still, t, 0.4);
+    this.rumble.gain.setTargetAtTime(0.03 * still, t, 0.6);
     this.windFilter.frequency.setTargetAtTime(300 + speed * 22, t, 0.2);
+  }
+
+  /** A cave: a hollow, low room tone and the odd drip ringing off the rock. */
+  cave(w) {
+    if (!this.ctx) return;
+    this.caveW = w;
+    const t = this.ctx.currentTime;
+    if (!this.caveBed) {
+      this.caveBed = this.gain(0);
+      this.loopNoise().connect(this.filter('lowpass', 220, 0.5)).connect(this.filter('peaking', 68, 6)).connect(this.caveBed).connect(this.master);
+      this.caveSend = this.gain(0);
+      this.caveBed.connect(this.caveSend).connect(this.verbIn);
+      this.nextDrip = 0;
+    }
+    this.caveBed.gain.setTargetAtTime(w * 0.05, t, 0.8);
+    this.caveSend.gain.setTargetAtTime(w * 0.4, t, 0.8);
+    if (w > 0.3 && t > this.nextDrip) {
+      const f = 900 + Math.random() * 1600;
+      this.tone(f, 0.018 * w, 0.09, { to: f * 0.6, wet: 0.95, attack: 0.002 });
+      this.nextDrip = t + 0.6 + Math.random() * 2.8;
+    }
   }
 
   // ------------------------------------------------------------ one-shots

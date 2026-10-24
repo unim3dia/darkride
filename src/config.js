@@ -129,6 +129,13 @@ export const FORKS = [
   { at: 0.8, side: -1, kind: 'ephemera', len: 780, D: 260, lift: 10 },
 ];
 
+// Detours: off a left-hand ramp, a hard right that spirals down under the ring
+// road into a cave, and climbs back out to merge onto the highway from the left.
+export const DETOURS = [
+  { fork: 'ether', name: 'THE HOLLOW', sub: 'under the road · no wind down here' },
+  { fork: 'ephemera', name: 'THE QUIET', sub: 'a cave beneath the ring road' },
+];
+
 export const HOMES = [
   { s: 0, kind: 'district' },     // the Underpass
   { s: 0.5, kind: 'narrows' },    // the Narrows, halfway round the ring (fraction of the loop)

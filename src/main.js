@@ -61,11 +61,19 @@ const answerers = new Answerers(scene);
 for (const p of places) chunks.extras.push(p.chunk);
 // the off-ramps and the pocket worlds they cross
 const forks = new Forks(scene);
-vehicle.spurs = forks.spurs;
+vehicle.spurs = [...forks.spurs, ...forks.detours];
 for (const c of forks.chunks) chunks.extras.push(c);
 chunks.avoid = (x, z) => !!placeAt(x, z, 40) || forks.near(x, z);
 vehicle.street = { contains: (x, z, margin = 0) => !!placeAt(x, z, margin) };
-rig.clip = (from, to) => (placeAt(to.x, to.z, 30) || district).clipCamera(from, to);
+rig.clip = (from, to) => {
+  const safe = (placeAt(to.x, to.z, 30) || district).clipCamera(from, to);
+  // down in a cave the rock is the wall
+  const det = vehicle.spurHit && vehicle.spurHit.spur.clipCamera ? vehicle.spurHit.spur : null;
+  return det ? det.clipCamera(safe) : safe;
+};
+
+// underground: near-black air, the headlights doing all the work
+const CAVE_PALETTE = { fog: 0x030303, skyTop: 0x000000, skyHorizon: 0x030303, glow: 0x060606, light: 0.025, exposure: 0.72, fogMul: 1.5, grain: 1.4, rain: 0 };
 
 const state = {
   mode: 'title',
@@ -150,7 +158,7 @@ const trail = new Trail(scene, (() => {
 })());
 {
   const p = sample(district.s0 + START_U + 60);
-  district.signAt('RING ROAD', 'the bridge ->', new THREE.Vector3(p.x + p.nx * (ROAD.HALF_WIDTH + 2.5), 5.2, p.z + p.nz * (ROAD.HALF_WIDTH + 2.5)), Math.atan2(-p.tx, -p.tz) + 0.35, [0xd9e2e6, 0x9fb4c4]);
+  district.signAt('RING ROAD', '↑ bridge straight ahead', new THREE.Vector3(p.x + p.nx * (ROAD.HALF_WIDTH + 2.5), 5.2, p.z + p.nz * (ROAD.HALF_WIDTH + 2.5)), Math.atan2(-p.tx, -p.tz) + 0.35, [0xd9e2e6, 0x9fb4c4]);
 }
 warmStart(chunks, vehicle.s);
 rig.view = 1; // the title shot looks back at the driver
@@ -380,20 +388,29 @@ function tick(now) {
   chunks.update(vehicle.s, vehicle.vel.x * along.tx + vehicle.vel.z * along.tz >= 0 ? 1 : -1);
   // out in a pocket world: its own light, its own name, a choir instead of the road
   const pk = forks.update(dt, state.time, vehicle, camera);
-  ambient.pocket = pk.pocket ? { weight: pk.weight, palette: pk.pocket.palette } : null;
+  ambient.pocket = pk.pocket ? { weight: pk.weight, palette: pk.pocket.palette }
+    : pk.cave > 0.01 ? { weight: pk.cave, palette: CAVE_PALETTE } : null;
   audio.choir(pk.pocket ? pk.pocket.choir : null, pk.weight);
   if (pk.pocket && pk.weight > 0.55 && state.pocketShown !== pk.pocket) {
     state.pocketShown = pk.pocket;
     screens.showCard(pk.pocket.name, pk.pocket.sub);
   }
   if (!pk.pocket && state.pocketShown) { state.pocketShown = null; state.zone = -1; }
+  // under the road: no rain, no wind, its own name
+  state.cave = pk.cave;
+  audio.cave(pk.cave);
+  if (pk.detour && pk.cave > 0.6 && state.caveShown !== pk.detour) {
+    state.caveShown = pk.detour;
+    screens.showCard(pk.detour.name, pk.detour.sub);
+  }
+  if (!pk.detour && state.caveShown) { state.caveShown = null; state.zone = -1; }
   dissolveUniforms.uCar.value.copy(vehicle.pos);
   // your headlights, for the parked cars' lamp glass to catch
   catchUniforms.uDir.value.copy(vehicle.forward).setY(0).normalize();
   catchUniforms.uSrc.value.copy(vehicle.pos).addScaledVector(catchUniforms.uDir.value, 2.9).y += 0.8;
 
   const z = zoneIndexAt(vehicle.s);
-  if (z !== state.zone && state.mode === 'ride' && !pk.pocket) {
+  if (z !== state.zone && state.mode === 'ride' && !pk.pocket && !pk.detour) {
     state.zone = z;
     screens.showZone(z);
     audio.setZone(z);
@@ -414,7 +431,8 @@ function tick(now) {
   trail.update(dt, state.time, vehicle);
   fogLayers.update(state.time, camera, vehicle.groundY, scene.fog.color, ambient.fogThick, inTown);
   renderer.toneMappingExposure += (ambient.exposure * 1.05 - renderer.toneMappingExposure) * Math.min(1, raw);
-  rain.update(dt, camera.position, vehicle.vel, ambient.rain);
+  const rainHere = ambient.rain * (1 - (state.cave || 0));
+  rain.update(dt, camera.position, vehicle.vel, rainHere);
   carView.sync(vehicle, state.time, dt);
   if (!state.fall || !state.fall.reset || state.fall.t > 2.2) {
     if (state.fall && !state.fall.reset) rig.camera.lookAt(vehicle.pos);
@@ -424,7 +442,7 @@ function tick(now) {
 
   audio.frame({
     speed: vehicle.speed, throttle: drive.throttle, charge: Math.max(vehicle.charge, vehicle.pumping * 0.35), charging: vehicle.charging || vehicle.pumping > 0,
-    scrape: ev.scrape, lampNear: ambient.lampNear, rain: ambient.rain, airborne: vehicle.airborne, view: rig.name, train: trainNear,
+    scrape: ev.scrape, lampNear: ambient.lampNear, rain: rainHere, airborne: vehicle.airborne, view: rig.name, train: trainNear,
   });
 
   state.aberration *= Math.exp(-raw * 4);
@@ -432,10 +450,10 @@ function tick(now) {
   post.uTime.value = state.time;
   post.uGrain.value = 0.085 * ambient.grain + (vehicle.airborne ? 0.03 : 0);
   // lens weather: the windshield is wiped; the outside camera just gets rained on
-  carView.raining = ambient.rain > 0.12;
+  carView.raining = rainHere > 0.12;
   const wetTarget = rig.name === 'cabin'
-    ? ambient.rain * (0.12 + 0.85 * carView.glassWetness(state.time))
-    : Math.max(0, ambient.rain * 0.36 - Math.min(0.15, vehicle.speed * 0.004));
+    ? rainHere * (0.12 + 0.85 * carView.glassWetness(state.time))
+    : Math.max(0, rainHere * 0.36 - Math.min(0.15, vehicle.speed * 0.004));
   state.wet += (wetTarget - state.wet) * Math.min(1, raw * (rig.name === 'cabin' ? 12 : 1.5));
   post.uWet.value = state.wet;
   post.uWind.value = rig.name === 'cabin' ? 0 : Math.min(0.6, vehicle.speed * 0.012);

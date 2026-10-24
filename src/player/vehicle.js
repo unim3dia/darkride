@@ -120,7 +120,7 @@ export class Vehicle {
     const deck = onRoadPlan && this.pos.y > deckY - 2.5 ? deckY : -Infinity;
     let spurHit = null;
     for (const sp of this.spurs) {
-      const h = sp.query(this.pos.x, this.pos.z);
+      const h = sp.query(this.pos.x, this.pos.z, this.pos.y);
       if (h && Math.abs(h.d) < HW + 0.8 && this.pos.y > h.y - 2.5 && (!spurHit || h.y > spurHit.y)) spurHit = h;
     }
     const ramp = spurHit ? spurHit.y : -Infinity;
@@ -176,7 +176,7 @@ export class Vehicle {
       }
     }
     // ---- off-ramp walls: invisible-tall over the void, from where it leaves the highway to where it rejoins
-    if (spurHit && spurHit.spur.walled(spurHit.t)) {
+    if (spurHit && spurHit.spur.walled(spurHit.t, Math.sign(spurHit.d))) {
       const lim = HW - CAR_HALF_W;
       const d = spurHit.d;
       if (Math.abs(d) > lim && this.pos.y < spurHit.y + 9) {

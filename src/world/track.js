@@ -1,6 +1,6 @@
 // The ring road: a closed loop that climbs out of the district onto the deck,
 // circles the dead city through four zones, and comes back down to the street.
-import { ROAD, ZONES, HOMES, FORKS as FORK_DEFS } from '../config.js';
+import { ROAD, ZONES, HOMES, FORKS as FORK_DEFS, DETOURS as DETOUR_DEFS } from '../config.js';
 
 // ---------------------------------------------------------------- build the loop
 
@@ -259,6 +259,33 @@ export const FORKS = FORK_DEFS.map((f) => {
   return { ...f, sA, sB: sA + f.len, uSep };
 });
 
+/**
+ * Each detour, planned in ring coordinates (s along the loop, d to the right of it).
+ * It leaves its ramp at u = U_BRANCH turning hard right, makes one descending loop,
+ * swings under the highway into the cave, veers out left and climbs, then merges.
+ */
+export const DETOUR = { U_BRANCH: 0.15, R: 26, S_LEN: 130, CAVE_LEN: 300, VEER: 110, CLIMB: 400, MERGE: 180, CAVE_Y: -9, OUT_D: -30 };
+export const DETOUR_PLANS = DETOUR_DEFS.map((def) => {
+  const f = FORKS.find((k) => k.kind === def.fork);
+  const u = DETOUR.U_BRANCH;
+  const sB = f.sA + u * f.len;
+  const dB = f.side * f.D * Math.sin(Math.PI * u) ** 2;
+  const theta0 = Math.atan(f.side * f.D * (Math.PI / f.len) * Math.sin(2 * Math.PI * u));
+  const sL = sB - DETOUR.R * Math.sin(theta0);
+  const dL = dB + DETOUR.R * Math.cos(theta0) - DETOUR.R;
+  const sC0 = sL + DETOUR.S_LEN;
+  const sC1 = sC0 + DETOUR.CAVE_LEN;
+  const sV = sC1 + DETOUR.VEER;
+  const sM0 = sC1 + DETOUR.CLIMB;
+  const sEnd = sM0 + DETOUR.MERGE;
+  return { ...def, fork: f, sBranch: sB, dB, theta0, sL, dL, sC0, sC1, sV, sM0, sEnd, open: [sM0 + 0.4 * DETOUR.MERGE, sEnd + 3] };
+});
+
+/** Stretches where the highway's barrier is open on `side`, beyond the forks themselves. */
+function extraOpenings(side) {
+  return side < 0 ? DETOUR_PLANS.map((p) => p.open) : [];
+}
+
 /** Is the highway's jersey barrier open on this side here (where an off-ramp peels away)? */
 export function forkOpen(s, side) {
   const w = wrap(s);
@@ -267,6 +294,7 @@ export function forkOpen(s, side) {
     const lap = f.uSep * f.len;
     if ((w > f.sA - 3 && w < f.sA + lap) || (w > f.sB - lap && w < f.sB + 3)) return true;
   }
+  for (const [o0, o1] of extraOpenings(Math.sign(side))) if (w > o0 && w < o1) return true;
   return false;
 }
 
@@ -279,6 +307,9 @@ export function barrierSpans(a, b, side) {
     for (const [o0, o1] of [[f.sA - 3, f.sA + lap], [f.sB - lap, f.sB + 3]]) {
       spans = spans.flatMap(([x, y]) => (o1 <= x || o0 >= y ? [[x, y]] : [[x, o0], [o1, y]].filter(([p, q]) => q - p > 0.5)));
     }
+  }
+  for (const [o0, o1] of extraOpenings(side)) {
+    spans = spans.flatMap(([x, y]) => (o1 <= x || o0 >= y ? [[x, y]] : [[x, o0], [o1, y]].filter(([p, q]) => q - p > 0.5)));
   }
   return spans;
 }
