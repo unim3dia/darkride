@@ -314,8 +314,8 @@ vehicle.spurs.push(race.track);
   raceTrail = new Trail(scene, pts, { persistent: true });
 }
 const stampede = new Stampede(scene);
-// the herd's air: dust hanging warm in the headlights
-const DUST_PALETTE = { fog: 0x4a3e32, skyTop: 0x16120e, skyHorizon: 0x5c4c3c, glow: 0x7a6450, light: 0.22, exposure: 0.95, fogMul: 1.7, grain: 2.2, rain: 0 };
+// the herd's air: cold blue fog the animals come apart in
+const DUST_PALETTE = { fog: 0x5a6f86, skyTop: 0x1a2532, skyHorizon: 0x7a92aa, glow: 0x8aa4bc, light: 0.42, exposure: 1.0, fogMul: 1.35, grain: 1.8, rain: 0.45 };
 const ETHER_CHOIR = forks.pockets[forks.spurs.findIndex((sp) => sp.kind === 'ether')].choir;
 warmStart(chunks, vehicle.s);
 rig.view = 1; // the title shot looks back at the driver
@@ -589,7 +589,7 @@ function tick(now) {
   } else audio.choir(pk.pocket ? pk.pocket.choir : null, pk.weight);
   // the stampede: the herd runs with you, and leans on you if you drift into it
   const herd = stampede.update(dt, state.time, vehicle);
-  if (herd.w > 0.01 && !ambient.pocket) ambient.pocket = { weight: herd.w * 0.75, palette: DUST_PALETTE };
+  if (herd.w > 0.01 && !ambient.pocket) ambient.pocket = { weight: herd.w * 0.85, palette: DUST_PALETTE };
   if (herd.push && herd.normal) {
     vehicle.pos.x += herd.normal.x * herd.push * 0.6;
     vehicle.pos.z += herd.normal.z * herd.push * 0.6;
