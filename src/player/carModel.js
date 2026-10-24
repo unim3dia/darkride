@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { pulseMat } from '../render/pulseMaterial.js';
 import { MATS, EYE_MAT, HEADLIGHT_MAT, TAIL_MAT, SHARED_MATS, merge } from '../world/props.js';
+import { CATCH_MATS, catchGeos } from './catchLight.js';
 
 export const CAR_MATS = {
   paint: MATS.paint,
@@ -21,7 +22,7 @@ export const CAR_MATS = {
   amber: new THREE.MeshBasicMaterial({ color: new THREE.Color(0.32, 0.1, 0.01) }),
   redLamp: new THREE.MeshBasicMaterial({ color: new THREE.Color(0.35, 0.02, 0.01) }),
 };
-for (const m of Object.values(CAR_MATS)) SHARED_MATS.add(m);
+for (const m of [...Object.values(CAR_MATS), ...Object.values(CATCH_MATS)]) SHARED_MATS.add(m);
 
 export const WHEEL_RADIUS = 0.36;
 export const WHEELS = [[-0.86, -1.72], [0.86, -1.72], [-0.86, 1.86], [0.86, 1.86]];
@@ -385,13 +386,15 @@ export function buildStaticCar(dull = true) {
       whitewall: merge(wheelParts.whitewall),
       lamps: merge(L.heads),
       tails: merge(L.tails),
+      catchHeads: merge(catchGeos().heads),
+      catchTails: merge(catchGeos().tails),
     };
     for (const g of Object.values(staticCache)) g.userData.shared = true;
     LOD = 'high';
   }
   const c = staticCache;
   const g = new THREE.Group();
-  const add = (geo, mat) => g.add(new THREE.Mesh(geo, mat));
+  const add = (geo, mat) => { const m = new THREE.Mesh(geo, mat); g.add(m); return m; };
   add(c.paint, dull ? CAR_MATS.paintDull : CAR_MATS.paint);
   add(c.vinyl, CAR_MATS.vinyl);
   add(c.glass, CAR_MATS.glass);
@@ -403,6 +406,9 @@ export function buildStaticCar(dull = true) {
   add(c.lamps, CAR_MATS.darkChrome);
   add(c.tails, CAR_MATS.seam);
   add(c.amber, CAR_MATS.seam);
+  // the lamp glass catches your headlights before the rest of the car shows
+  add(c.catchHeads, CATCH_MATS.head).renderOrder = 2;
+  add(c.catchTails, CATCH_MATS.tail).renderOrder = 2;
   return g;
 }
 

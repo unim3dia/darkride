@@ -68,6 +68,7 @@ export class Vehicle {
     }
     this.s = best.s;
     this.airborne = y > 0.05;
+    this.rideOff = 0; this.prevY = undefined; this.prevClimb = 0;
     this.airPitch = this.airPitchV = this.airRoll = 0;
     this.offDeck = false;
     this.charge = 0;
@@ -81,6 +82,7 @@ export class Vehicle {
     this.pos.set(S.x + S.nx * d, S.y + drop, S.z + S.nz * d);
     this.vel.set(S.tx * speed, 0, S.tz * speed);
     this.airborne = drop > 0;
+    this.rideOff = 0; this.prevY = undefined; this.prevClimb = 0;
     this.airPitch = this.airPitchV = this.airRoll = 0;
     this.offDeck = false;
     this.charge = 0;
@@ -198,7 +200,25 @@ export class Vehicle {
     this.settleAttitude(dt);
     this.updateCorners(dt, input, ev);
     this.wheelSpin += (this.vel.dot(f) / 0.37) * dt;
+    this.easeSteps(dt);
     return ev;
+  }
+
+  /**
+   * Curbs, ramp lips and seams snap pos.y in one frame. What you see (body and
+   * camera) takes the step over a few frames instead; physics is untouched.
+   */
+  easeSteps(dt) {
+    // compare against last frame's climb, so a steady hill never counts as a step
+    const climb = this.pos.y - (this.prevY ?? this.pos.y);
+    const jump = climb - (this.prevClimb || 0);
+    this.prevY = this.pos.y;
+    this.prevClimb = Math.abs(jump) > 0.06 ? this.prevClimb || 0 : climb;
+    const grounded = !this.airborne && !this.wasAirborne;
+    this.wasAirborne = this.airborne;
+    if (grounded && Math.abs(jump) > 0.06 && Math.abs(jump) < 1.2) this.rideOff = (this.rideOff || 0) - jump;
+    this.rideOff = (this.rideOff || 0) * Math.exp(-dt * 12);
+    this.rideY = this.pos.y + this.rideOff;
   }
 
   driveGround(dt, input, f, r, ev) {

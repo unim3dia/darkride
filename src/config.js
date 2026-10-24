@@ -34,7 +34,7 @@ export const CAR = {
   AIR_YAW: 2.4,
   AIR_PITCH: 2.0,
   SUSP_K: 260,            // spring
-  SUSP_D: 13,             // damper
+  SUSP_D: 17,             // damper: settles in one soft dip instead of a jiggle
   // hydraulics: a tap pops a corner, a hold charges the jump
   TAP_TIME: 0.2,          // released before this = a pop, after = a jump
   POP_SPEED: 6.4,         // how hard a pop throws the corners up (m/s)

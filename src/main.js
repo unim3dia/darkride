@@ -20,6 +20,7 @@ import { Forks } from './world/forks.js';
 import { collidersFrom, updateBodies } from './world/bodies.js';
 import { Vehicle } from './player/vehicle.js';
 import { CarView } from './player/carView.js';
+import { catchUniforms } from './player/catchLight.js';
 import { CameraRig } from './player/cameraRig.js';
 import { Gauges } from './ui/gauges.js';
 import { Screens } from './ui/screens.js';
@@ -227,10 +228,10 @@ function roadFeel(dt) {
     const j = Math.floor((vehicle.s + off) / JOINT_SPACING);
     if (j !== state.joint[axle] && !gapAt(j * JOINT_SPACING)) {
       if (speed > 3) {
-        vehicle.bodyVY -= 0.25 + speed * 0.012;
-        vehicle.pitchV += (axle === 'front' ? -1 : 1) * speed * 0.004;
+        vehicle.bodyVY -= 0.12 + speed * 0.005;
+        vehicle.pitchV += (axle === 'front' ? -1 : 1) * speed * 0.0018;
         audio.joint(Math.min(1, speed / 30), axle === 'rear');
-        rig.shake(0.035);
+        rig.shake(0.012);
       }
     }
     state.joint[axle] = j;
@@ -387,6 +388,9 @@ function tick(now) {
   }
   if (!pk.pocket && state.pocketShown) { state.pocketShown = null; state.zone = -1; }
   dissolveUniforms.uCar.value.copy(vehicle.pos);
+  // your headlights, for the parked cars' lamp glass to catch
+  catchUniforms.uDir.value.copy(vehicle.forward).setY(0).normalize();
+  catchUniforms.uSrc.value.copy(vehicle.pos).addScaledVector(catchUniforms.uDir.value, 2.9).y += 0.8;
 
   const z = zoneIndexAt(vehicle.s);
   if (z !== state.zone && state.mode === 'ride' && !pk.pocket) {

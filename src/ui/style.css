@@ -163,29 +163,32 @@ body.touch .hint { display: none; }
   position: fixed;
   left: 0;
   bottom: 0;
-  width: 42vw;
-  height: 46vh;
+  width: 50vw;
+  height: 70vh;
+}
+/* resting spot for the stick; it jumps to wherever the thumb lands */
+.t-base {
+  position: absolute;
+  left: calc(12vw + env(safe-area-inset-left) + 60px);
+  top: calc(70vh - 14vh - env(safe-area-inset-bottom) - 60px);
+  width: 120px;
+  height: 120px;
+  margin: -60px 0 0 -60px;
+  border-radius: 50%;
+  border: 1px solid rgba(217, 226, 230, 0.14);
+  background: rgba(10, 12, 14, 0.18);
   display: grid;
   place-items: center;
+  opacity: 0.55;
+  transition: opacity 0.2s ease;
 }
-.t-pad::before {
-  content: '';
-  position: absolute;
-  bottom: calc(10vh + env(safe-area-inset-bottom));
-  left: calc(8vw + env(safe-area-inset-left));
-  width: 180px;
-  height: 2px;
-  background: rgba(217, 226, 230, 0.16);
-}
+.t-pad.on .t-base { opacity: 1; transition: none; }
 .t-knob {
-  position: absolute;
-  bottom: calc(10vh + env(safe-area-inset-bottom) - 27px);
-  left: calc(8vw + env(safe-area-inset-left) + 63px);
-  width: 56px;
-  height: 56px;
+  width: 54px;
+  height: 54px;
   border-radius: 50%;
   border: 1px solid rgba(217, 226, 230, 0.32);
-  background: rgba(10, 12, 14, 0.25);
+  background: rgba(10, 12, 14, 0.3);
   transition: transform 0.12s ease;
 }
 .t-pad.on .t-knob { transition: none; border-color: rgba(217, 226, 230, 0.6); }
@@ -194,10 +197,11 @@ body.touch .hint { display: none; }
   right: calc(4vw + env(safe-area-inset-right));
   bottom: calc(6vh + env(safe-area-inset-bottom));
   display: grid;
-  grid-template-columns: auto auto;
-  grid-template-areas: 'hop gas' 'brake gas';
-  gap: 12px;
-  align-items: end;
+  grid-template-columns: auto auto auto;
+  grid-template-areas: '. . cam' 'leanl lift leanr' '. hop hop';
+  gap: 10px;
+  align-items: center;
+  justify-items: center;
 }
 .t-btn {
   border: 1px solid rgba(217, 226, 230, 0.28);
@@ -208,17 +212,13 @@ body.touch .hint { display: none; }
   border-radius: 50%;
 }
 .t-btn.on, .t-mini.on { color: var(--bone); border-color: rgba(217, 226, 230, 0.7); background: rgba(217, 226, 230, 0.1); }
-.t-gas { grid-area: gas; width: 96px; height: 96px; }
-.t-hop { grid-area: hop; width: 78px; height: 78px; color: var(--sodium); border-color: rgba(255, 171, 90, 0.4); }
+.t-hop { grid-area: hop; width: 104px; height: 104px; justify-self: end; color: var(--sodium); border-color: rgba(255, 171, 90, 0.4); }
 .t-hop.on { color: #ffd2a0; border-color: rgba(255, 171, 90, 0.85); background: rgba(255, 171, 90, 0.12); }
-.t-brake { grid-area: brake; width: 62px; height: 62px; justify-self: end; font-size: 9px; }
-.t-top {
-  position: fixed;
-  top: calc(2.2vh + env(safe-area-inset-top));
-  left: calc(4vw + env(safe-area-inset-left));
-  display: flex;
-  gap: 10px;
-}
+.t-lift { grid-area: lift; width: 62px; height: 62px; font-size: 9px; }
+.t-lean { width: 48px; height: 48px; font-size: 13px; letter-spacing: 0; }
+.t-lean-l { grid-area: leanl; }
+.t-lean-r { grid-area: leanr; }
+.t-cam { grid-area: cam; justify-self: end; }
 .t-mini {
   padding: 9px 12px;
   border: 1px solid rgba(217, 226, 230, 0.2);
