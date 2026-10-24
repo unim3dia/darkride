@@ -286,6 +286,8 @@ function extraOpenings(side) {
   return side < 0 ? DETOUR_PLANS.map((p) => p.open) : [];
 }
 
+const BARE = [];
+
 /** Is the highway's jersey barrier open on this side here (where an off-ramp peels away)? */
 export function forkOpen(s, side) {
   const w = wrap(s);
@@ -308,7 +310,7 @@ export function barrierSpans(a, b, side) {
       spans = spans.flatMap(([x, y]) => (o1 <= x || o0 >= y ? [[x, y]] : [[x, o0], [o1, y]].filter(([p, q]) => q - p > 0.5)));
     }
   }
-  for (const [o0, o1] of extraOpenings(side)) {
+  for (const [o0, o1] of [...extraOpenings(side), ...BARE]) {
     spans = spans.flatMap(([x, y]) => (o1 <= x || o0 >= y ? [[x, y]] : [[x, o0], [o1, y]].filter(([p, q]) => q - p > 0.5)));
   }
   return spans;

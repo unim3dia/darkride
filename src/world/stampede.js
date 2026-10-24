@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { LOOP_LEN, sample, elevation } from './track.js';
 import { merge } from './props.js';
+import { Spur, spurRibbon } from './spur.js';
 
 /** Where it happens, as loop fractions: the empty run between the Dust and the Ether. */
 export const STAMPEDE = { a: 0.185 * LOOP_LEN, b: 0.262 * LOOP_LEN };
@@ -20,7 +21,9 @@ const herdTime = { value: 0 };
  * parts exist this instant. The back of the animal goes first; the edge glints.
  */
 function herdMat() {
-  const m = new THREE.MeshStandardMaterial({ color: 0x141a21, roughness: 0.9, metalness: 0, envMapIntensity: 0.3 });
+  // not flesh: a vision, light that remembers the shape of an animal
+  // solid, shaded bodies with cold light raking their edges; they only lose form where they come apart
+  const m = new THREE.MeshStandardMaterial({ color: 0x0c1015, roughness: 0.9, metalness: 0, envMapIntensity: 0.15, side: THREE.DoubleSide });
   const form = { value: 1 };
   const len = { value: 2 };
   m.userData = { form, len };
@@ -40,14 +43,18 @@ function herdMat() {
     ` + sh.fragmentShader
       .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
         {
-          vec3 q = vBody * 1.7 + vec3(0.0, uTime * 0.9, uTime * 1.3);
+          vec3 q = vBody * 1.6 + vec3(0.0, uTime * 1.6, uTime * 3.0);
           float n = vn(q + vec3(0.0, 0.0, uTime * 2.0)) * 0.65 + vn(q * 2.7) * 0.35;
-          float rear = clamp(vBody.z / uLen, -1.0, 1.0) * 0.55;
+          float rear = clamp(vBody.z / uLen, -1.0, 1.0) * 0.8;
           float cut = uForm + 0.12 - (n + rear);
           if (cut < 0.0) discard;
           herdEdge = smoothstep(0.09, 0.0, cut);
         }`)
-      .replace('#include <opaque_fragment>', 'outgoingLight += vec3(0.5, 0.65, 0.82) * herdEdge * 0.35;\n#include <opaque_fragment>');
+      .replace('#include <opaque_fragment>', `{
+          float rim = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewPosition))), 2.5);
+          outgoingLight += vec3(0.4, 0.55, 0.75) * rim * rim * 0.55 + vec3(0.6, 0.78, 1.0) * herdEdge * 0.45;
+        }
+        #include <opaque_fragment>`);
   };
   m.customProgramCacheKey = () => 'herd-dissolve';
   return m;
@@ -135,8 +142,7 @@ function buildAnimal(kind) {
   const S = SPECIES[kind];
   GEO[kind] = GEO[kind] || { body: merge(S.body()), leg: new THREE.CylinderGeometry(S.legR, S.legR * 0.75, S.hip, 7).translate(0, -S.hip / 2, 0) };
   const mat = herdMat();
-  mat.side = kind === 'elephant' ? THREE.DoubleSide : THREE.FrontSide; // the ears are flat
-  mat.userData.len.value = S.len / 2;
+    mat.userData.len.value = S.len / 2;
   const g = new THREE.Group();
   g.add(new THREE.Mesh(GEO[kind].body, mat));
   const legs = S.legs.map(([x, z]) => {
@@ -162,27 +168,57 @@ function herdPlan() {
   const plan = [];
   const pick = (list) => list[Math.floor(Math.random() * list.length)];
   for (const side of [-1, 1]) {
-    // right against the car: wolves and bison at the very edge of the road
-    for (let k = 0; k < 8; k++) plan.push({ kind: 'wolf', d: side * (5.6 + Math.random() * 0.6), scale: 1.15, rise: 0, s: -60 + k * 17 });
-    for (let k = 0; k < 7; k++) plan.push({ kind: pick(['horse', 'elk', 'bison']), d: side * (8.2 + Math.random()), scale: 1.1, rise: 0, s: -50 + k * 20 });
-    // a wall of them, floor to sky: rows stacked up and out, each row higher
-    for (let row = 0; row < 7; row++) {
-      const n = 9 - Math.floor(row / 2);
-      for (let k = 0; k < n; k++) {
-        plan.push({
-          kind: row === 4 && k === 2 ? 'elephant' : pick(['bison', 'bison', 'bear', 'elk', 'horse', 'wolf']),
-          d: side * (9 + row * 4.5 + Math.random() * 2),
-          scale: 1.3 + row * 0.35 + Math.random() * 0.4,
-          rise: row * row * 0.9 + Math.random() * 2,
-          s: -60 + (k / n) * 140 + Math.random() * 10,
-        });
+    // at the edge of the bridge: big wolves and horses, close enough to touch
+    for (let k = 0; k < 6; k++) plan.push({ kind: pick(['wolf', 'wolf', 'horse']), d: side * (5 + Math.random() * 1.5), scale: 1.6 + Math.random() * 0.5, rise: -0.5, s: -60 + k * 25 });
+    // the herd proper: bodies three to seven times life size, a wall rising away from you
+    for (let row = 0; row < 4; row++) {
+      for (let k = 0; k < 7; k++) {
+        plan.push({ kind: pick(['bison', 'bison', 'bear', 'elk', 'horse']), d: side * (11 + row * 9 + Math.random() * 3), scale: 3 + row * 1.3 + Math.random(), rise: -6 + row * 3 + Math.random() * 3, s: -60 + (k / 7) * 150 + Math.random() * 12 });
       }
+    }
+    // titans: heads above the top of the screen, striding through the fog
+    for (let k = 0; k < 5; k++) {
+      plan.push({ kind: k === 2 ? 'elephant' : pick(['bison', 'elk', 'bear']), d: side * (55 + Math.random() * 25), scale: k === 2 ? 9 : 11 + Math.random() * 6, rise: -25 + Math.random() * 10, s: -40 + k * 30 });
     }
   }
   return plan;
 }
 
-const FLAKES = 6000;
+/**
+ * The herd's own country: a thin bridge strung across a cold void, far from
+ * anywhere else. Same interface as an off-ramp, so the car drives it as one.
+ */
+const HERD_ORIGIN = { x: -9200, z: 9200 };
+export const HERD_LEN = 2600;
+export function buildHerdRoad(ringS) {
+  const raw = [];
+  const M = 2600;
+  for (let i = 0; i <= M; i++) {
+    const u = i / M;
+    const x = HERD_ORIGIN.x + u * HERD_LEN;
+    const z = HERD_ORIGIN.z + 70 * Math.sin(u * Math.PI * 2.2) + 25 * Math.sin(u * Math.PI * 7.1);
+    const y = 40 + 9 * Math.sin(u * Math.PI * 3) + 3 * Math.sin(u * Math.PI * 13);
+    raw.push([x, z, y, u]);
+  }
+  const road = new Spur({ kind: 'herd', side: 1, sA: ringS, sB: ringS, uSep: 0, raw });
+  road.tSepA = 0;
+  road.tSepB = road.N - 1;
+  return road;
+}
+
+/** The bridge: a strip of dark stone a lane and a half wide, a thin line of light down its middle. */
+export function herdRoadMesh(road) {
+  const g = new THREE.Group();
+  const deck = new THREE.MeshStandardMaterial({ color: 0x15191e, roughness: 0.35, metalness: 0.2 });
+  const line = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.7, 0.85, 1.1) });
+  g.add(new THREE.Mesh(spurRibbon(road, 0, road.N - 2, -3.2, 3.2, 0.04, -1.6, 3), deck));
+  const dashes = [];
+  for (let t = 0; t < road.N - 6; t += 10) dashes.push(spurRibbon(road, t, t + 4, -0.07, 0.07, 0.07, 0.06, 4));
+  g.add(new THREE.Mesh(merge(dashes), line));
+  return g;
+}
+
+const FLAKES = 9000;
 
 export class Stampede {
   constructor(scene) {
@@ -193,7 +229,7 @@ export class Stampede {
       const a = buildAnimal(p.kind);
       a.g.scale.setScalar(p.scale);
       this.group.add(a.g);
-      return { ...a, d: p.d, scaleK: p.scale, rise: p.rise, sOff: p.s, phase: Math.random() * 6, pace: 1.3 + Math.random() * 0.5, wave: 0.6 + Math.random() * 0.9, seed: i * 1.7 };
+      return { ...a, d: p.d, scaleK: p.scale, rise: p.rise, sOff: p.s, phase: Math.random() * 6, pace: 1.5 + Math.random() * 0.9, wave: 0.6 + Math.random() * 0.9, seed: i * 1.7 };
     });
     this.makeFlakes();
     this.makeDust();
@@ -205,7 +241,7 @@ export class Stampede {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0.5, 0, -0.45, -0.4, 0, 0.5, -0.3, 0.05], 3));
     geo.computeVertexNormals();
-    const mat = new THREE.MeshBasicMaterial({ color: 0x0b1016, side: THREE.DoubleSide });
+    const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.05, 0.07, 0.1), side: THREE.DoubleSide, transparent: true, opacity: 0.85, depthWrite: false, fog: true });
     const mesh = new THREE.InstancedMesh(geo, mat, FLAKES);
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     mesh.frustumCulled = false;
@@ -255,6 +291,8 @@ export class Stampede {
       const out = Math.sign(a.d) * (1 + Math.random() * 4);
       F.vel[i * 3] = Q.nx * out + (Math.random() - 0.5) * 3;
       F.vel[i * 3 + 1] = 1 + Math.random() * 4;
+      // and they're thrown forward, ahead of the herd, as fast as it runs
+      F.vel[i * 3] += Q.tx * a.speedNow * 0.9; F.vel[i * 3 + 2] += Q.tz * a.speedNow * 0.9;
       F.vel[i * 3 + 2] = Q.nz * out + (Math.random() - 0.5) * 3;
       for (let c = 0; c < 3; c++) { F.rot[i * 3 + c] = Math.random() * 6; F.spin[i * 3 + c] = (Math.random() - 0.5) * 9; }
       F.size[i] = (0.15 + Math.random() * 0.7) * Math.sqrt(k) * (a.kind === 'wolf' ? 0.6 : 1);
@@ -276,67 +314,57 @@ export class Stampede {
     }
   }
 
-  /** How deep into the stretch `s` is: 0 outside, 1 in the thick of it. */
-  weightAt(s) {
-    const w = ((s % LOOP_LEN) + LOOP_LEN) % LOOP_LEN;
-    const { a, b } = STAMPEDE;
-    return Math.min(1, Math.max(0, (w - a) / FADE)) * Math.min(1, Math.max(0, (b - w) / FADE));
-  }
-
-  /** @returns { w, near, push, normal }: how much herd is around you, and a shove if you drifted into one. */
-  update(dt, time, vehicle) {
+  /** @returns { w, near }: how much herd is around you. `road` is the herd's bridge. */
+  update(dt, time, vehicle, road) {
     herdTime.value = time;
-    const P = {};
-    sample(vehicle.s, P);
-    const along = vehicle.vel.x * P.tx + vehicle.vel.z * P.tz;
-    const onDeck = vehicle.onRoad && !vehicle.spurHit && Math.abs(vehicle.pos.y - elevation(vehicle.s)) < 4;
-    const target = onDeck && along > 2 ? this.weightAt(vehicle.s) : 0;
-    this.w += (target - this.w) * Math.min(1, dt * (target > this.w ? 0.8 : 1.5));
+    const h = vehicle.spurHit && vehicle.spurHit.spur === road ? vehicle.spurHit : null;
+    const target = h ? Math.min(1, h.t / 120, (road.N - h.t) / 120) : 0;
+    this.w += (target - this.w) * Math.min(1, dt * (target > this.w ? 1.2 : 2));
     this.group.visible = this.w > 0.01;
-    const out = { w: this.w, near: 0, push: 0 };
+    const out = { w: this.w, near: 0 };
     if (!this.group.visible) return out;
+    if (h) this.t = h.t;
+    const C = road.sample(this.t || 0);
+    const along = vehicle.vel.x * C.tx + vehicle.vel.z * C.tz;
     const pace = THREE.MathUtils.clamp(Math.max(along, 0), 18, 48);
     const Q = {};
     for (const a of this.herd) {
       // they charge past you, faster than the car, and the herd never ends
       const run = Math.max(pace, 26) * a.pace * (1 + 0.1 * Math.sin(time * 0.31 + a.phase));
       a.sOff += (run - along) * dt;
-      if (a.sOff > 90) a.sOff -= 150;
-      if (a.sOff < -60) a.sOff += 150;
-      const ends = THREE.MathUtils.smoothstep(a.sOff, -60, -45) * (1 - THREE.MathUtils.smoothstep(a.sOff, 75, 90));
-      // it fills in from the edges as you go deeper, and every body breathes in and out of being
-      const far = Math.abs(a.d) / 60;
-      const arrive = THREE.MathUtils.clamp((this.w - far * 0.5) * 2.5, 0, 1);
-      const breathe = 0.78 + 0.3 * Math.sin(time * a.wave + a.seed); // mostly there, crumbling from the back
-      const byLens = Math.abs(a.sOff + 8) < a.len * a.scaleK * 0.7 && Math.abs(a.d) < 9 ? 0.25 : 1;
-      const form = byLens * ends * arrive * (Math.abs(a.d) < 8 ? Math.max(0.85, breathe) : breathe);
+      a.speedNow = run;
+      const span = 150 + a.scaleK * 6;
+      if (a.sOff > span * 0.6) a.sOff -= span;
+      if (a.sOff < -span * 0.4) a.sOff += span;
+      const ends = THREE.MathUtils.smoothstep(a.sOff, -span * 0.4, -span * 0.3) * (1 - THREE.MathUtils.smoothstep(a.sOff, span * 0.5, span * 0.6));
+      // sometimes an animal, sometimes only shards of one: the shape comes and goes fast
+      // one slow wave rolls forward through the whole herd, like a breath: bodies
+      // gather as it passes and come apart behind it, but never all the way
+      const wave = Math.sin(time * 1.15 - a.sOff * 0.035 - Math.abs(a.d) * 0.02);
+      const breathe = 0.62 + 0.38 * wave;
+      const byLens = Math.abs(a.sOff + 8) < a.len * a.scaleK * 0.6 && Math.abs(a.d) < 4 + a.half * a.scaleK ? 0.3 : 1;
+      const form = Math.max(0.3 * ends * this.w, byLens * ends * this.w * THREE.MathUtils.clamp(breathe, 0, 1));
       a.mat.userData.form.value = form;
       a.g.visible = form > 0.02;
       if (!a.g.visible) continue;
-      const s = vehicle.s + a.sOff;
-      sample(s, Q);
-      const y = elevation(s) + a.rise * (0.7 + 0.3 * Math.sin(time * 0.4 + a.seed));
-      a.phase += dt * run * a.stride / a.scaleK;
+      road.sample((this.t || 0) + a.sOff, Q);
+      const y = Q.y + a.rise * (1 + 0.15 * Math.sin(time * 0.4 + a.seed));
+      // the herd gallops in step: one beat, every body on it
+      this.beat = (this.beat || 0) + dt * 0.5 / this.herd.length;
+      a.phase = time * 7.5 / Math.sqrt(a.scaleK) + (a.d > 0 ? 0 : Math.PI * 0.5);
       const bob = Math.abs(Math.sin(a.phase)) * a.hip * 0.18 * a.scaleK;
       a.g.position.set(Q.x + Q.nx * a.d, y + bob, Q.z + Q.nz * a.d);
       a.g.rotation.set(Math.sin(a.phase * 2) * 0.05, -Q.heading, 0);
+      // smeared by its own speed, and now and then it skips like a bad memory
+      a.g.scale.set(a.scaleK, a.scaleK, a.scaleK * (1 + 1.2 * (1 - form)));
       a.legs.forEach((l, i) => { l.rotation.x = Math.sin(a.phase + (i % 2 ? Math.PI : 0) + (i > 1 ? 0.9 : 0)) * a.swing; });
       const lit = form > 0.35 && Math.sin(time * 7 + a.seed * 3) > -0.9;
       a.eyes.forEach((e) => { e.visible = lit; });
-      // they shed as they come apart; the more broken, the more they lose
-      const rate = (1.5 - form) * (a.kind === 'wolf' ? 22 : 70) * this.w * Math.sqrt(a.scaleK);
+      const rate = Math.max(0, 1.1 - form) * (a.kind === 'wolf' ? 40 : 110) * this.w * Math.min(3, Math.sqrt(a.scaleK));
       const n = Math.floor(rate * dt + Math.random());
       if (n > 0) this.shed(a, n, Q);
-      if (Math.random() < dt * 14 * this.w) this.puff(this.dust, a.g.position.x, y, a.g.position.z, 2, a.half * 2 * a.scaleK, 1.6);
       if (Math.random() < dt * 0.8 * this.w) this.puff(this.embers, a.g.position.x, y + a.hip * a.scaleK, a.g.position.z, 3, a.half * a.scaleK, 2.5);
-      // too close: they shoulder you back toward the middle
-      const dd = (vehicle.d ?? 0) - a.d;
-      const reach = a.half * a.scaleK + 0.3;
-      if (Math.abs(a.sOff) < a.len * a.scaleK * 0.6 && Math.abs(dd) < reach && a.rise < 0.5) {
-        out.push = Math.sign(dd || -a.d) * (reach - Math.abs(dd));
-        out.normal = { x: Q.nx, z: Q.nz };
-      }
-      out.near = Math.max(out.near, (1 - Math.min(1, (Math.hypot(a.sOff, a.d) - 4) / 30)) * form);
+      out.near = Math.max(out.near, (1 - Math.min(1, (Math.hypot(a.sOff, a.d) - 4) / 40)) * form);
     }
     this.stepFlakes(dt);
     this.stepPoints(this.dust, dt, 0.4 * this.w);
