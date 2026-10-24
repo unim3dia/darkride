@@ -19,6 +19,7 @@ import { Trail } from './world/trail.js';
 import { Forks } from './world/forks.js';
 import { DriveInMovie, LOT } from './world/driveIn.js';
 import { Race, RACE_PALETTE } from './world/race.js';
+import { Stampede } from './world/stampede.js';
 import { collidersFrom, updateBodies } from './world/bodies.js';
 import { Vehicle } from './player/vehicle.js';
 import { CarView } from './player/carView.js';
@@ -285,6 +286,9 @@ vehicle.spurs.push(race.track);
   }
   raceTrail = new Trail(scene, pts, { persistent: true });
 }
+const stampede = new Stampede(scene);
+// the herd's air: dust hanging warm in the headlights
+const DUST_PALETTE = { fog: 0x4a3e32, skyTop: 0x16120e, skyHorizon: 0x5c4c3c, glow: 0x7a6450, light: 0.22, exposure: 0.95, fogMul: 1.7, grain: 2.2, rain: 0 };
 const ETHER_CHOIR = forks.pockets[forks.spurs.findIndex((sp) => sp.kind === 'ether')].choir;
 warmStart(chunks, vehicle.s);
 rig.view = 1; // the title shot looks back at the driver
@@ -292,8 +296,9 @@ rig.view = 1; // the title shot looks back at the driver
 function startRide() {
   if (state.mode !== 'title') return;
   // browsers keep quiet until you touch something: the first press wakes the title's beat
-  if (!audio.ctx) {
+  if (!audio.ctx || audio.ctx.state !== 'running') {
     audio.start();
+    audio.ctx.resume();
     audio.menu(true);
     const prompt = document.querySelector('.start');
     if (prompt) prompt.textContent = TOUCH ? 'tap again to ride' : 'press again to ride';
@@ -306,6 +311,15 @@ function startRide() {
   rig.blend = 0;
 }
 window.addEventListener('pointerdown', startRide);
+// some browsers let a page make sound straight away; if this one does, the beat is already playing
+try {
+  audio.start();
+  audio.menu(true);
+  if (audio.ctx.state === 'running') {
+    const prompt = document.querySelector('.start');
+    if (prompt) prompt.dataset.awake = '1';
+  }
+} catch { /* no audio here; the title is silent */ }
 
 // ---------------------------------------------------------------- events → feel
 
@@ -542,6 +556,17 @@ function tick(now) {
     ambient.pocket = { weight: race.fade, palette: RACE_PALETTE };
     audio.choir(ETHER_CHOIR, race.fade * 0.7);
   } else audio.choir(pk.pocket ? pk.pocket.choir : null, pk.weight);
+  // the stampede: the herd runs with you, and leans on you if you drift into it
+  const herd = stampede.update(dt, state.time, vehicle);
+  if (herd.w > 0.01 && !ambient.pocket) ambient.pocket = { weight: herd.w * 0.75, palette: DUST_PALETTE };
+  if (herd.push && herd.normal) {
+    vehicle.pos.x += herd.normal.x * herd.push * 0.6;
+    vehicle.pos.z += herd.normal.z * herd.push * 0.6;
+    if (!state.herdBump || state.time - state.herdBump > 0.5) { audio.bump(6); rig.shake(0.3); state.herdBump = state.time; }
+  }
+  audio.stampede(herd.w, herd.near);
+  if (herd.w > 0.5 && !state.herdShown) { state.herdShown = true; screens.showCard('THE STAMPEDE', 'they were running long before the road'); }
+  if (herd.w < 0.05) state.herdShown = false;
   if (pk.pocket && pk.weight > 0.55 && state.pocketShown !== pk.pocket) {
     state.pocketShown = pk.pocket;
     screens.showCard(pk.pocket.name, pk.pocket.sub);
@@ -629,7 +654,7 @@ function tick(now) {
 }
 
 // expose a tiny handle for debugging in the console
-window.__darkride = { vehicle, state, chunks, rig, ROAD, particles, watchers, carView, scene, renderer, district, narrows, places, answerers, emitPulse, ambient, forks, audio, warmStart, race, movie };
+window.__darkride = { vehicle, state, chunks, rig, ROAD, particles, watchers, carView, scene, renderer, district, narrows, places, answerers, emitPulse, ambient, forks, audio, warmStart, race, movie, stampede };
 if (TEST) import('./core/testkit.js').then((m) => m.installTestKit(window.__darkride));
 if (new URLSearchParams(location.search).has('reel')) import('./core/reel.js').then((m) => m.installReel(window.__darkride));
 schedule(tick);

@@ -311,29 +311,53 @@ export class Audio {
     this.menuGain.gain.setTargetAtTime(1, t, 1.5);
     const send = this.gain(0.6);
     this.menuGain.connect(send).connect(this.verbIn);
-    // the bass: two saws a hair apart, under a lowpass that slowly breathes
-    const bassF = this.filter('lowpass', 110, 4);
-    const bassG = this.gain(0.16);
-    this.menuBass = [ctx.createOscillator(), ctx.createOscillator()];
-    this.menuBass.forEach((o, i) => { o.type = 'sawtooth'; o.frequency.value = 36.71 * (i ? 1.004 : 1); o.connect(bassF); o.start(); });
+    // the bass: two saws a hair apart plus the octave, driven a little so small
+    // speakers still hear its edge, under a lowpass that slowly breathes
+    const drive = ctx.createWaveShaper();
+    const curve = new Float32Array(256);
+    for (let i = 0; i < 256; i++) { const x = i / 128 - 1; curve[i] = Math.tanh(x * 2.2); }
+    drive.curve = curve;
+    const bassF = this.filter('lowpass', 240, 3);
+    const bassG = this.gain(0.11);
+    this.menuBass = [ctx.createOscillator(), ctx.createOscillator(), ctx.createOscillator()];
+    this.menuBass.forEach((o, i) => { o.type = 'sawtooth'; o.frequency.value = 36.71 * [1, 1.004, 2][i]; o.connect(drive); o.start(); });
+    drive.connect(bassF);
     const lfo = ctx.createOscillator();
     lfo.frequency.value = 0.07;
-    const lfoAmt = this.gain(60);
+    const lfoAmt = this.gain(110);
     lfo.connect(lfoAmt).connect(bassF.frequency);
     lfo.start();
     bassF.connect(bassG).connect(this.menuGain);
+    // far above it, a dark drone a half-step apart, barely there
+    const padG = this.gain(0.018);
+    for (const f of [146.83, 155.56]) {
+      const o = ctx.createOscillator();
+      o.type = 'triangle';
+      o.frequency.value = f;
+      o.connect(padG);
+      o.start();
+      this.menuBass.push(o);
+    }
+    padG.connect(this.filter('lowpass', 900)).connect(this.menuGain);
     const BEAT = 60 / 66;
     let next = t + 0.3;
     let step = 0;
     const kick = (at, peak) => {
       const o = ctx.createOscillator();
       const g = this.gain();
-      o.frequency.setValueAtTime(58, at);
-      o.frequency.exponentialRampToValueAtTime(29, at + 0.5);
+      o.frequency.setValueAtTime(120, at);
+      o.frequency.exponentialRampToValueAtTime(42, at + 0.32);
       o.connect(g).connect(this.menuGain);
-      this.env(g, at, 0.006, peak, 1.1);
+      this.env(g, at, 0.004, peak, 0.9);
       o.start(at);
-      o.stop(at + 1.3);
+      o.stop(at + 1.1);
+      // the beater: a dull knock so the beat lands even where the sub can't be heard
+      const n = ctx.createBufferSource();
+      n.buffer = this.noise;
+      const ng = this.gain();
+      n.connect(this.filter('bandpass', 180, 1.2)).connect(ng).connect(this.menuGain);
+      this.env(ng, at, 0.002, peak * 0.5, 0.08);
+      n.start(at, Math.random() * 2, 0.15);
     };
     const tick = (at, peak) => {
       const src = ctx.createBufferSource();
@@ -363,12 +387,12 @@ export class Audio {
         const bar = Math.floor(step / 4);
         if (beat === 0) kick(next, 0.55);
         if (beat === 1) kick(next + BEAT * 0.5, 0.32); // the heartbeat's second, softer thump
-        if (beat === 2 || beat === 3) tick(next + BEAT * 0.5, 0.05);
+        if (beat === 2 || beat === 3) tick(next + BEAT * 0.5, 0.09);
         if (step % 32 === 0) swell(next);
         // every four bars the bass grinds up a half-step and back
         if (beat === 0) {
           const f = bar % 8 >= 4 ? 38.89 : 36.71;
-          this.menuBass.forEach((o, i) => o.frequency.setTargetAtTime(f * (i ? 1.004 : 1), next, 0.4));
+          this.menuBass.slice(0, 3).forEach((o, i) => o.frequency.setTargetAtTime(f * [1, 1.004, 2][i], next, 0.4));
         }
         next += BEAT;
         step++;
@@ -376,6 +400,34 @@ export class Audio {
     };
     schedule();
     this.menuTimer = setInterval(schedule, 100);
+  }
+
+  /** Hooves: a ground-shaking roar, a gallop of thumps, and now and then a trumpet. */
+  stampede(w, near) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    if (!this.herdBed) {
+      this.herdBed = this.gain(0);
+      this.loopNoise().connect(this.filter('lowpass', 160, 0.8)).connect(this.herdBed).connect(this.master);
+      this.herdDust = this.gain(0);
+      this.loopNoise().connect(this.filter('bandpass', 900, 0.5)).connect(this.herdDust).connect(this.master);
+      this.nextHoof = 0;
+      this.nextCall = t + 3;
+    }
+    this.herdBed.gain.setTargetAtTime(w * (0.12 + near * 0.12), t, 0.3);
+    this.herdDust.gain.setTargetAtTime(w * 0.025, t, 0.3);
+    if (w < 0.05) return;
+    if (t > this.nextHoof) {
+      this.tone(48 + Math.random() * 20, (0.1 + near * 0.14) * w, 0.14, { to: 32, wet: 0.15 });
+      this.nextHoof = t + 0.07 + Math.random() * 0.12;
+    }
+    if (t > this.nextCall) {
+      // an elephant somewhere in the dust
+      const f = 380 + Math.random() * 160;
+      this.tone(f, 0.05 * w, 0.9, { type: 'sawtooth', to: f * 1.35, wet: 0.6, attack: 0.08 });
+      this.tone(f * 1.5, 0.025 * w, 0.8, { type: 'sawtooth', to: f * 1.9, wet: 0.6, attack: 0.1 });
+      this.nextCall = t + 4 + Math.random() * 7;
+    }
   }
 
   /** The drive-in's speakers: the film's engines rise and fall, a crash cracks. */
