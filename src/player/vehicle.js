@@ -293,7 +293,10 @@ export class Vehicle {
       this.chargeSide = approach(this.chargeSide, input.steer, 8, dt);
       this.chargeNose = approach(this.chargeNose, input.throttle - input.brake, 8, dt);
       if (!input.hopHeld) {
-        if (this.chargeTime < CAR.TAP_TIME) this.pop(input, ev);
+        // a plain tap is a light hop of the whole car; tap with S / A / D pops that end or side
+        const aimed = input.brake > 0 || Math.abs(input.steer) > 0.3;
+        if (this.chargeTime < CAR.TAP_TIME && aimed) this.pop(input, ev);
+        else if (this.chargeTime < CAR.TAP_TIME) this.hop(ev);
         else this.launch(f2, r2, ev);
       }
     }
@@ -312,6 +315,17 @@ export class Vehicle {
       this.corners[i].popping = true;
     }
     ev.pop = { which };
+  }
+
+  /** The light hop: all four rams at once, a little air, a soft landing. */
+  hop(ev) {
+    this.vel.y = CAR.TAP_HOP;
+    this.bodyVY += 5;
+    this.airborne = true;
+    this.airTime = 0;
+    this.charging = false;
+    this.charge = 0;
+    ev.launch = { charge: 0.05, side: 0 };
   }
 
   launch(f, r, ev) {

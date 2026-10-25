@@ -292,6 +292,14 @@ export const HERD = (() => {
   return { ...f, sA, sB: sA + f.len, uSep };
 })();
 
+/** The circuit: one long lap of an off-ramp, leaving to the left just past the Narrows. */
+export const RACE = (() => {
+  const f = { at: 0.53, side: -1, len: 1700, D: 420, lift: 8, kind: 'race' };
+  const sA = f.at * LOOP_LEN;
+  const uSep = Math.asin(Math.sqrt((2 * (ROAD.HALF_WIDTH + 0.8)) / f.D)) / Math.PI;
+  return { ...f, sA, sB: sA + f.len, uSep };
+})();
+
 /** A short loop off the left side of the Ruins, through a forgotten neighbourhood. */
 export const HOOD = (() => {
   const f = { at: 0.225, side: -1, len: 620, D: 150, lift: -5, kind: 'hood' };
@@ -304,7 +312,8 @@ export const HOOD = (() => {
 function extraOpenings(side) {
   if (side < 0) {
     const lap = HOOD.uSep * HOOD.len;
-    return [...DETOUR_PLANS.map((p) => p.open), [HOOD.sA - 3, HOOD.sA + lap], [HOOD.sB - lap, HOOD.sB + 3]];
+    const rl = RACE.uSep * RACE.len;
+    return [...DETOUR_PLANS.map((p) => p.open), [HOOD.sA - 3, HOOD.sA + lap], [HOOD.sB - lap, HOOD.sB + 3], [RACE.sA - 3, RACE.sA + rl], [RACE.sB - rl, RACE.sB + 3]];
   }
   const lap = HERD.uSep * HERD.len;
   return [[HERD.sA - 3, HERD.sA + lap], [HERD.sB - lap, HERD.sB + 3]];

@@ -67,7 +67,7 @@ for (const p of places) chunks.extras.push(p.chunk);
 const forks = new Forks(scene);
 vehicle.spurs = [...forks.spurs, ...forks.detours];
 for (const c of forks.chunks) chunks.extras.push(c);
-chunks.avoid = (x, z) => !!placeAt(x, z, 40) || forks.near(x, z) || (herdRoadRef && herdNear(x, z)) || (hoodRef && hoodRef.near(x, z));
+chunks.avoid = (x, z) => !!placeAt(x, z, 40) || (raceRef && raceRef.near(x, z)) || forks.near(x, z) || (herdRoadRef && herdNear(x, z)) || (hoodRef && hoodRef.near(x, z));
 vehicle.street = { contains: (x, z, margin = 0) => !!placeAt(x, z, margin) };
 rig.clip = (from, to) => {
   const safe = (placeAt(to.x, to.z, 30) || district).clipCamera(from, to);
@@ -80,7 +80,6 @@ rig.clip = (from, to) => {
 const CAVE_PALETTE = { fog: 0x030303, skyTop: 0x000000, skyHorizon: 0x030303, glow: 0x060606, light: 0.025, exposure: 0.72, fogMul: 1.5, grain: 1.4, rain: 0 };
 
 let driveInTrail = null;
-let raceTrail = null;
 
 // ---------------------------------------------------------------- R I D E: somewhere else
 
@@ -114,7 +113,7 @@ function warpSpots() {
   spots.push({ name: 'block', go: () => { const p = hood.spur.sample(hood.spur.N * 0.3); vehicle.placeAt(p.x, p.y + 0.4, p.z, p.heading, 16); } });
   spots.push({ name: 'narrows', go: () => vehicle.reset(narrows.s0, 0, 0, 16) });
   spots.push({ name: 'stampede', go: () => { const p = herdRoad.sample(herdRoad.N * 0.2); vehicle.placeAt(p.x, p.y + 0.4, p.z, p.heading, 24); } });
-  spots.push({ name: 'race', go: () => { const p = narrows.toWorld(RACE_U, -60, 0); vehicle.placeAt(p.x, 0, p.z, -narrows.yawToward(0, -1), 10); } });
+  spots.push({ name: 'race', go: () => { const T = race.track; const p = T.sample(T.tGrid - 140); vehicle.placeAt(p.x, p.y + 0.4, p.z, p.heading, 18); } });
   return spots;
 }
 let WARPS = null;
@@ -125,13 +124,7 @@ const raceShot = (camera, v, dt) => { if (!race.shot(camera, v, dt)) rig.cine = 
 /** The circuit: through the gate, the countdown, laps, the result, and home. */
 function raceFrame(dt) {
   const rr = race.update(dt, vehicle);
-  const flash = () => { state.aberration = 1.4; rig.offset = undefined; rig.reach = 1; state.fall = null; };
-  if (rr.enter) {
-    race.enter(vehicle);
-    flash();
-    audio.launch(0.9);
-    screens.showCard('THE CIRCUIT', 'three laps · the rival on your right');
-  }
+  if (rr.enter) screens.showCard('THE CIRCUIT', 'one long lap · the limo beside you');
   if (rr.lamp) audio.tone(392, 0.12, 0.35, { wet: 0.4 });
   if (rr.go) audio.tone(784, 0.16, 0.8, { wet: 0.5 });
   if (rr.card) screens.showCard(rr.card[0], rr.card[1]);
@@ -141,12 +134,6 @@ function raceFrame(dt) {
   const ours = rig.cine === raceShot;
   if ((ours || !rig.cine) && rig.view === 0 && race.wantsShot(dt, vehicle)) rig.cine = raceShot;
   else if (ours) rig.cine = null;
-  if (rr.done) {
-    race.leave(vehicle);
-    flash();
-    state.zone = -1;
-    warmStart(chunks, vehicle.s);
-  }
   return rr;
 }
 
@@ -162,7 +149,6 @@ function warp(name) {
 }
 
 function landWarp() {
-  if (race.active) race.phase = 'idle', race.set.group.visible = false;
   WARPS = WARPS || warpSpots();
   const want = (state.warping.name || '').toLowerCase();
   let i = want ? WARPS.findIndex((w) => w.name.toLowerCase().includes(want)) : -1;
@@ -295,29 +281,18 @@ const movie = new DriveInMovie(district, district.driveIn.booth);
   }
   driveInTrail = new Trail(scene, pts, { persistent: true });
 }
-// in the Narrows: a sign calls you left, down a street to a gate of light, and the circuit
-const RACE_U = -133;
-const race = new Race(scene, {
-  pos: narrows.toWorld(RACE_U, -100, 0),
-  yaw: narrows.faceYaw(0, 1),
-  back: (v) => { const p = narrows.toWorld(RACE_U, -86, 0); v.placeAt(p.x, 0, p.z, -narrows.yawToward(0, 1), 8); },
-}, narrows.s0, rng(5150));
+// just past the Narrows, a left-hand exit: the road becomes the circuit, one long lap, and comes back
+const race = new Race(scene, rng(5150));
 vehicle.spurs.push(race.track);
-{
-  const u = -162;
-  narrows.signAt('RACE', '← tonight · three laps', narrows.toWorld(u, narrows.roadV(u) - (ROAD.HALF_WIDTH + 5), 6), narrows.faceYaw(-1, -0.45), [0xe8f0ff, 0x7fd8ff]);
-  const route = [[-152, narrows.roadV(-152) - 5], [RACE_U, narrows.roadV(RACE_U) - 14], [RACE_U, -94]];
-  const pts = [];
-  for (let i = 0; i < route.length - 1; i++) {
-    const [a, b] = [route[i], route[i + 1]];
-    const n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 6);
-    for (let k = 0; k < n; k++) pts.push(narrows.toWorld(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n, 0.04));
-  }
-  raceTrail = new Trail(scene, pts, { persistent: true });
+for (const dist of [600, 300, 120]) {
+  const A = sample(race.track.sA - dist);
+  const v = new THREE.Vector3(A.x - A.nx * (ROAD.HALF_WIDTH + 4), A.y + 5.4, A.z - A.nz * (ROAD.HALF_WIDTH + 4));
+  district.signAt('THE CIRCUIT', `${dist} m · ← one lap`, v, Math.atan2(-A.tx, -A.tz), [0xe8f0ff, 0x7fd8ff]);
 }
 const stampede = new Stampede(scene);
 let herdRoadRef = null;
 let hoodRef = null;
+let raceRef = null;
 function herdNear(x, z) {
   const b = herdRoadRef.box;
   if (x < b.minX - 200 || x > b.maxX + 200 || z < b.minZ - 200 || z > b.maxZ + 200) return false;
@@ -333,6 +308,7 @@ herdRoadRef = herdRoad;
 const hood = new Hood(scene, rng(7777));
 vehicle.spurs.push(hood.spur);
 hoodRef = hood;
+raceRef = { near: (x, z) => { const b = race.track.box; if (x < b.minX - 150 || x > b.maxX + 150 || z < b.minZ - 150 || z > b.maxZ + 150) return false; return race.track.distance(x, z) < 120; } };
 for (const dist of [400, 200]) {
   const A = sample(hood.spur.sA - dist);
   const v = new THREE.Vector3(A.x - A.nx * (ROAD.HALF_WIDTH + 4), A.y + 5.4, A.z - A.nz * (ROAD.HALF_WIDTH + 4));
@@ -601,7 +577,7 @@ function tick(now) {
   const rr = state.mode === 'ride' ? raceFrame(dt) : {};
   const riding = state.mode === 'ride' && !state.fall && !rr.hold;
   const drive = riding ? input : { throttle: 0, brake: 0, steer: 0, hopHeld: false, hopPressed: false };
-  if (rr.hold) vehicle.vel.set(0, 0, 0);
+  if (rr.hold) vehicle.vel.multiplyScalar(Math.exp(-dt * 3.5)); // you roll to a stop on the line
   const ev = physics(dt, drive);
   frameEvents(ev);
 
@@ -697,7 +673,6 @@ function tick(now) {
   mist.update(dt, vehicle, camera, scene.fog.color, ambient.flash, inTown);
   trail.update(dt, state.time, vehicle);
   driveInTrail.update(dt, state.time, vehicle);
-  raceTrail.update(dt, state.time, vehicle);
   const film = movie.update(dt, renderer, vehicle.pos);
   audio.movie(film.level, film.roar, film.hit);
   fogLayers.update(state.time, camera, vehicle.groundY, scene.fog.color, ambient.fogThick, inTown);
