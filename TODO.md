@@ -30,7 +30,7 @@ Status: [ ] to do · [x] done · [~] partly done (see note)
 - [ ] D4. JUMP level: abstract, a field of ramps and hills that launch you; land on the next one; big flight.
 
 ## E. Menus and names
-- [ ] E1. Title screen: a MAP option showing the whole course clearly (no overlapping words), with all the new places.
+- [x] E1. Title screen: a MAP option showing the whole course clearly (no overlapping words), with all the new places. → MAP button on the title; drawn live from game data, labels auto-spaced. New places register via `D.extras` in mapView.
 - [x] E2. Rename THE STAMPEDE → THE CHARGE.
 
 ## Notes

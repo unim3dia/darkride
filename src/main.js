@@ -31,6 +31,7 @@ import { Screens } from './ui/screens.js';
 import { Audio } from './core/audio.js';
 import { readInput } from './core/input.js';
 import { setupFullscreenButton } from './ui/fullscreen.js';
+import { drawMap } from './ui/mapView.js';
 import { setupTouch, mergeTouch } from './ui/touch.js';
 
 setupFullscreenButton();
@@ -357,7 +358,7 @@ warmStart(chunks, vehicle.s);
 rig.view = 1; // the title shot looks back at the driver
 
 function startRide() {
-  if (state.mode !== 'title') return;
+  if (state.mode !== 'title' || state.mapOpen) return;
   // browsers keep quiet until you touch something: the first press wakes the title's beat
   if (!audio.ctx || audio.ctx.state !== 'running') {
     audio.start();
@@ -377,6 +378,31 @@ function startRide() {
   rig.blend = 0;
 }
 window.addEventListener('pointerdown', startRide);
+// the map: shows the whole course, drawn from the game itself; any press closes it
+{
+  const btn = document.getElementById('map-btn');
+  const view = document.getElementById('map');
+  const open = (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const D = {
+      forks, herdRoad, hood, race, district, narrows,
+      driveIn: district.toWorld((LOT.u0 + LOT.u1) / 2, LOT.aisleV),
+      start: district.toWorld(150, district.roadV(150)),
+    };
+    const src = drawMap(D, 2000);
+    const cv = document.getElementById('map-canvas');
+    cv.width = src.width; cv.height = src.height;
+    cv.getContext('2d').drawImage(src, 0, 0);
+    view.hidden = false;
+    state.mapOpen = true;
+  };
+  btn.addEventListener('pointerdown', open);
+  btn.addEventListener('click', (e) => e.stopPropagation());
+  const close = (e) => { if (!state.mapOpen) return; e.stopPropagation(); view.hidden = true; setTimeout(() => { state.mapOpen = false; }, 50); };
+  view.addEventListener('pointerdown', close);
+  window.addEventListener('keydown', (e) => { if (state.mapOpen) { e.stopImmediatePropagation(); close(e); } }, true);
+}
 // some browsers let a page make sound straight away; if this one does, the beat is already playing
 try {
   audio.start();
