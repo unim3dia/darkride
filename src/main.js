@@ -112,6 +112,7 @@ function warpSpots() {
   spots.push({ name: 'drive-in', go: () => { const p = district.toWorld(LOT.u1 - 30, LOT.aisleV); vehicle.placeAt(p.x, 0, p.z, -district.yawToward(-1, 0), 4); } });
   spots.push({ name: 'block', go: () => { const p = hood.spur.sample(hood.spur.N * 0.3); vehicle.placeAt(p.x, p.y + 0.4, p.z, p.heading, 16); } });
   spots.push({ name: 'narrows', go: () => vehicle.reset(narrows.s0, 0, 0, 16) });
+  spots.push({ name: 'charge', go: () => { const p = herdRoad.sample(herdRoad.N * 0.2); vehicle.placeAt(p.x, p.y + 0.4, p.z, p.heading, 24); } });
   spots.push({ name: 'stampede', go: () => { const p = herdRoad.sample(herdRoad.N * 0.2); vehicle.placeAt(p.x, p.y + 0.4, p.z, p.heading, 24); } });
   spots.push({ name: 'race', go: () => { const T = race.track; const p = T.sample(T.tGrid - 140); vehicle.placeAt(p.x, p.y + 0.4, p.z, p.heading, 18); } });
   return spots;
@@ -215,7 +216,10 @@ const state = {
   aberration: 0,
 };
 
-chunks.onSpawn = (c) => watchers.spawn(c);
+chunks.onSpawn = (c) => {
+  watchers.spawn(c);
+  for (const st of c.sentinels || []) watchers.spawnAt(c, c.group, st.pos, st.yaw, { bystander: true });
+};
 chunks.onDespawn = (c) => watchers.despawn(c);
 
 // the people of each place
@@ -343,7 +347,7 @@ const HOOD_PALETTE = { fog: 0x1a1714, skyTop: 0x050506, skyHorizon: 0x221d18, gl
   for (const dist of [600, 300, 120]) {
     const A = sample(STAMPEDE.a - dist);
     const v = new THREE.Vector3(A.x + A.nx * (ROAD.HALF_WIDTH + 4), A.y + 5.4, A.z + A.nz * (ROAD.HALF_WIDTH + 4));
-    district.signAt('STAMPEDE', `${dist} m · keep right`, v, Math.atan2(-A.tx, -A.tz), [0xbfe2ff, 0x7fa8d8]);
+    district.signAt('THE CHARGE', `${dist} m · keep right`, v, Math.atan2(-A.tx, -A.tz), [0xbfe2ff, 0x7fa8d8]);
   }
 }
 // the herd's air: cold blue fog the animals come apart in
@@ -655,7 +659,7 @@ function tick(now) {
   if (hev.miss === 'rim') { audio.tone(220, 0.2, 0.6, { type: 'triangle', to: 180, wet: 0.6 }); screens.showCard('OFF THE RIM', 'so close'); }
   if (hev.miss === 'air') screens.showCard('AIRBALL', 'the block saw that');
   audio.stampede(herd.w, herd.near, herd.intensity || 0, herd.score ? herd.score.vortex : 0);
-  if (herd.w > 0.5 && !state.herdShown) { state.herdShown = true; screens.showCard('THE STAMPEDE', 'they were running long before the road'); }
+  if (herd.w > 0.5 && !state.herdShown) { state.herdShown = true; screens.showCard('THE CHARGE', 'they were running long before the road'); }
   if (herd.w < 0.05) state.herdShown = false;
   if (pk.pocket && pk.weight > 0.55 && state.pocketShown !== pk.pocket) {
     state.pocketShown = pk.pocket;
@@ -702,6 +706,7 @@ function tick(now) {
   renderer.toneMappingExposure += (ambient.exposure * 1.05 - renderer.toneMappingExposure) * Math.min(1, raw);
   const rainHere = ambient.rain * (1 - (state.cave || 0));
   rain.update(dt, camera.position, vehicle.vel, rainHere);
+  carView.inside = rig.name === 'cabin' && !rig.cine;
   carView.sync(vehicle, state.time, dt);
   if (!state.fall || !state.fall.reset || state.fall.t > 2.2) {
     if (state.fall && !state.fall.reset) rig.camera.lookAt(vehicle.pos);

@@ -235,6 +235,10 @@ export class ChunkManager {
       car.rotation.z = (r() - 0.5) * 0.08;
       group.add(car);
       chunk.bodies.push(makeBody(car, w.s));
+      // someone always stands between you and a car in the road, eyes lit, so you see it coming
+      chunk.sentinels = chunk.sentinels || [];
+      chunk.sentinels.push({ pos: roadPoint(w.s - 6, w.d + (r() - 0.5) * 1.5, 0), yaw: -roadHeading(w.s) + Math.PI });
+      if (r() < 0.4) chunk.sentinels.push({ pos: roadPoint(w.s - 4, w.d + (w.d > 0 ? -2.4 : 2.4), 0), yaw: -roadHeading(w.s) + Math.PI + 0.4 });
     }
 
     if (f.sign) this.addSign(chunk, a + 20, r);

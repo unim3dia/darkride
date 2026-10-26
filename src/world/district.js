@@ -480,6 +480,14 @@ export class District {
       this.world.add(car);
       this.chunk.bodies.push(makeBody(car, 0));
       if (p.rider) seatRider(car);
+      // a figure out in front of every street car, so it shows in the dark (not the drive-in rows)
+      else {
+        const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw);
+        const w0 = this.toWorld(p.u, p.v, 0);
+        const L = this.toLocal(w0.x + fx * 4.2, w0.z + fz * 4.2);
+        const F = this.toLocal(w0.x + fx * 10, w0.z + fz * 10);
+        this.watcherSpots.push({ u: L.u, v: L.v, y: 0, faceU: F.u - L.u, faceV: F.v - L.v, bystander: true });
+      }
       if (p.sitter) this.watcherSpots.push({ u: p.u + 2.2, v: p.v, y: 0.55, faceU: 0, faceV: -1, sit: true });
     }
     for (const b of this.barrels) {

@@ -9,10 +9,10 @@ Status: [ ] to do · [x] done · [~] partly done (see note)
 - [x] A4. Remove the "THE DUST" countdown sign that stands before the bridge (wrong place/direction). Keep the highway ones.
 
 ## B. Car and camera
-- [ ] B1. Cabin view: sit closer to the wheel (not the back seat). Only the wrist and hand visible, wrapped in black cloth; very dark, fingers dark too.
-- [ ] B2. Cabin view: see more of the windshield, the left side window and the driver's side mirror (add a mirror).
-- [ ] B3. Tail-light wash: each time it comes back in, the stains/water spots on the ground should be in a different pattern. Keep the flicker/fade behaviour.
-- [ ] B4. Every parked/standing car gets at least one glowing-eyed figure standing in front of it, so you can see the car in the dark.
+- [x] B1. Cabin view: sit closer to the wheel (not the back seat). Only the wrist and hand visible, wrapped in black cloth; very dark, fingers dark too.
+- [x] B2. Cabin view: see more of the windshield, the left side window and the driver's side mirror (add a mirror). → camera in the driver's seat, 64° lens; glass is now a faint tint from inside (it was a dark mirror that hid the view); big round driver's mirror.
+- [x] B3. Tail-light wash: each time it comes back in, the stains/water spots on the ground should be in a different pattern. Keep the flicker/fade behaviour.
+- [x] B4. Every parked/standing car gets at least one glowing-eyed figure standing in front of it, so you can see the car in the dark. → highway wrecks + street cars (not the drive-in rows).
 
 ## C. Atmosphere, zone by zone
 - [ ] C1. Under the Trestle: foggier in the distance; top quarter of the frame a dark grey fog.
@@ -31,7 +31,7 @@ Status: [ ] to do · [x] done · [~] partly done (see note)
 
 ## E. Menus and names
 - [ ] E1. Title screen: a MAP option showing the whole course clearly (no overlapping words), with all the new places.
-- [ ] E2. Rename THE STAMPEDE → THE CHARGE.
+- [x] E2. Rename THE STAMPEDE → THE CHARGE.
 
 ## Notes
 - Live site: https://unim3dia.github.io/darkride/ · `?at=<place>` jumps there for testing.

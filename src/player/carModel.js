@@ -150,7 +150,9 @@ function bodyParts({ wheel: withWheel = true } = {}) {
     for (const z of [-1.13, 0.13, 1.2]) P.seam.push(box(0.012, 0.5, 0.01, x, 0.72, z));
     P.chrome.push(box(0.03, 0.03, 0.16, sx * 1.01, 0.9, -0.15), box(0.03, 0.03, 0.16, sx * 1.01, 0.9, 0.95));
     P.chrome.push(strut([sx * 0.96, 1.0, -1.02], [sx * 1.08, 1.1, -1.0], 0.015, 5));
-    P.chrome.push(rbox(0.06, 0.09, 0.14, sx * 1.1, 1.12, -1.0, 0.02));
+    // the driver's mirror is the big round-shouldered one you see from the seat
+    if (sx < 0) P.chrome.push(rbox(0.07, 0.15, 0.24, sx * 1.12, 1.14, -1.0, 0.04));
+    else P.chrome.push(rbox(0.06, 0.09, 0.14, sx * 1.1, 1.12, -1.0, 0.02));
   }
 
   // ---- the details that make it a '70s land yacht and not a box
@@ -264,9 +266,22 @@ export function shadowMat() {
       varying vec3 vV;
       void main() {
         float rim = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 3.0);
-        gl_FragColor = vec4(vec3(0.005 + rim * 0.038), 1.0);
+        gl_FragColor = vec4(vec3(0.003 + rim * 0.022), 1.0);
       }
     `,
+  });
+}
+
+/** Black cloth: soaks up the dash glow, only a dull sheen where it folds away from you. */
+function clothMat() {
+  return new THREE.ShaderMaterial({
+    side: THREE.DoubleSide,
+    vertexShader: /* glsl */ `
+      varying vec3 vN; varying vec3 vV;
+      void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: /* glsl */ `
+      varying vec3 vN; varying vec3 vV;
+      void main() { float rim = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 4.0); gl_FragColor = vec4(vec3(0.003 + rim * 0.02), 1.0); }`,
   });
 }
 
@@ -287,8 +302,19 @@ export function buildSteering(mat) {
   const wrist = new THREE.Object3D();
   wrist.position.set(0.02, -RIM_R - 0.02, 0.12);
   grip.add(wrist);
+  // a loose black sleeve falls over the wrist: the hand comes out of cloth
+  const sleeveGeo = new THREE.CylinderGeometry(0.05, 0.075, 0.2, 14, 3, true);
+  const sp = sleeveGeo.attributes.position;
+  for (let i = 0; i < sp.count; i++) {
+    const a = Math.atan2(sp.getZ(i), sp.getX(i));
+    const k = 1 + 0.14 * Math.sin(a * 5 + sp.getY(i) * 20) * (0.5 - sp.getY(i) / 0.2); // folds, looser at the hem
+    sp.setXYZ(i, sp.getX(i) * k, sp.getY(i), sp.getZ(i) * k);
+  }
+  sleeveGeo.computeVertexNormals();
+  const sleeve = new THREE.Mesh(sleeveGeo.rotateX(Math.PI / 2 - 0.3).translate(0.018, -RIM_R - 0.03, 0.17), clothMat());
+  grip.add(sleeve);
   // the arm: shoulder → elbow → wrist, solved each frame so the elbow hangs naturally
-  const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.046, 0.034, 1, 14), mat);
+  const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.06, 1, 14), clothMat());
   const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.052, 1, 14), mat);
   const elbowJoint = new THREE.Mesh(new THREE.SphereGeometry(0.052, 12, 10), mat);
   const shoulderJoint = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 10).scale(1.1, 0.9, 1), mat);

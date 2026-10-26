@@ -60,19 +60,24 @@ export class CameraRig {
 
     if (this.name === 'cabin') {
       model.driver.getWorldPosition(tmp);
-      // sat back in the bench, a touch to the left: enough room to see the whole arm, elbow and all
-      desired = tmp.clone().addScaledVector(f, -0.42).addScaledVector(r, -0.12).add(new THREE.Vector3(0, 0.1, 0));
-      look.copy(desired).addScaledVector(f, 20).y += -1.2 + v.airPitch * -8;
-      fov = 72 + speed * 0.15;
+      // in the driver's own seat, close behind the wheel: the windshield, the side glass, the mirror
+      desired = tmp.clone().addScaledVector(f, 0.12).addScaledVector(r, -0.02).add(new THREE.Vector3(0, 0.04, 0));
+      look.copy(desired).addScaledVector(f, 20).addScaledVector(r, -3.0).y += -3.6 + v.airPitch * -8;
+      fov = 64 + speed * 0.1;
       stiffness = 60;
       model.driver.visible = false;
+      // the arm is only a sleeve and a hand from here
+      const st = model.steering;
+      st.upper.visible = st.shoulderJoint.visible = st.elbowJoint.visible = false;
     } else if (this.name === 'hero') {
+      { const st = model.steering; st.upper.visible = st.shoulderJoint.visible = st.elbowJoint.visible = true; }
       desired = vp.clone().addScaledVector(f, 8.5 + speed * 0.06).addScaledVector(r, -4.2).setY(carY + 1.1);
       look.copy(vp).addScaledVector(f, 0.5).setY(carY + 1.0);
       fov = 50;
       stiffness = 14;
       model.driver.visible = true;
     } else {
+      { const st = model.steering; st.upper.visible = st.shoulderJoint.visible = st.elbowJoint.visible = true; }
       const back = 7.8 + speed * 0.05 + (v.airborne ? 1.5 : 0);
       // set off to the right of the car: a three-quarter view down its flank, not a dead-center bumper shot
       // (in the herd's country: lower and looking up, so the beasts take the frame)

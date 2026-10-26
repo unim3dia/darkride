@@ -2,7 +2,7 @@
 // and the passengers you've picked up, riding in the back seat as two lights each.
 import * as THREE from 'three';
 import { buildPlayerCar, buildRider, WHEEL_RADIUS } from './carModel.js';
-import { buildBeam, buildTailGlow, buildWipers } from './carLights.js';
+import { buildBeam, buildTailGlow, buildWipers, stainTexture } from './carLights.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -38,6 +38,12 @@ export class CarView {
     this.model.root.rotation.order = 'YXZ';
     this.model.headlights[0].material = this.model.headlights[0].material.clone();
     scene.add(this.model.root);
+    // the player's own glass: dark mirror from outside, a faint tint from the driver's seat
+    this.glassOut = null;
+    this.glassIn = new THREE.MeshStandardMaterial({ color: 0x8090a0, roughness: 0.1, metalness: 0, transparent: true, opacity: 0.06, depthWrite: false, side: THREE.DoubleSide });
+    this.glassMeshes = [];
+    this.model.root.traverse((o) => { if (o.isMesh && o.material && o.material.color && o.material.color.getHex() === 0x05070a && o.material.transparent) { this.glassOut = o.material; this.glassMeshes.push(o); } });
+    this.inside = false;
 
     // one weak, tired headlight beam; the left bulb is going
     this.beam = new THREE.SpotLight(0xffd9a0, 22, 42, 0.42, 0.7, 1.5);
@@ -113,6 +119,14 @@ export class CarView {
       default: target = 0.85;
     }
     M.k += (target - M.k) * Math.min(1, dt * rate);
+    // while it's out, the puddles rearrange: it comes back on a different patch of road
+    if (M.k < 0.04 && !M.reshuffled) {
+      M.reshuffled = true;
+      const old = this.tailGlow.material.map;
+      this.tailGlow.material.map = stainTexture();
+      old.dispose();
+    }
+    if (M.k > 0.2) M.reshuffled = false;
     return M.k;
   }
 
@@ -127,6 +141,7 @@ export class CarView {
 
   sync(v, time, dt) {
     const m = this.model;
+    for (const g of this.glassMeshes) g.material = this.inside ? this.glassIn : this.glassOut;
     m.root.position.copy(v.pos);
     m.root.position.y = v.rideY ?? v.pos.y;
     m.root.rotation.set(v.airPitch + (v.groundPitch || 0), -v.yaw, v.airRoll);

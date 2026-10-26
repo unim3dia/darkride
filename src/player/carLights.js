@@ -1,6 +1,5 @@
 // Light you can see the air in: beams through rain, red smear on wet asphalt.
 import * as THREE from 'three';
-import { glowTexture } from '../world/chunks.js';
 import { MATS } from '../world/props.js';
 
 const beamVert = /* glsl */ `
@@ -39,10 +38,44 @@ export function buildBeam(len = 26, spread = 4.2) {
   return m;
 }
 
+/**
+ * The red the tail lamps throw on wet asphalt, as stains and puddle-catches
+ * rather than a clean cone: a soft core broken into blots. Each call lays the
+ * blots out differently.
+ */
+export function stainTexture() {
+  const c = document.createElement('canvas');
+  c.width = 128;
+  c.height = 256;
+  const g = c.getContext('2d');
+  const core = g.createRadialGradient(64, 40, 0, 64, 90, 140);
+  core.addColorStop(0, 'rgba(255,255,255,0.55)');
+  core.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = core;
+  g.fillRect(0, 0, 128, 256);
+  const n = 10 + Math.floor(Math.random() * 14);
+  for (let i = 0; i < n; i++) {
+    const y = 10 + Math.pow(Math.random(), 0.8) * 230;
+    const spread = 18 + y * 0.22;
+    const x = 64 + (Math.random() - 0.5) * 2 * spread;
+    const r = 5 + Math.random() * 22 * (1 - y / 320);
+    const fade = 1 - y / 270;
+    const b = g.createRadialGradient(x, y, 0, x, y, r);
+    b.addColorStop(0, `rgba(255,255,255,${0.5 + Math.random() * 0.5 * fade})`);
+    b.addColorStop(0.6, `rgba(255,255,255,${0.25 * fade})`);
+    b.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = b;
+    g.beginPath();
+    g.ellipse(x, y, r * (0.6 + Math.random() * 0.8), r, Math.random() * 3, 0, Math.PI * 2);
+    g.fill();
+  }
+  return new THREE.CanvasTexture(c);
+}
+
 export function buildTailGlow() {
   const m = new THREE.Mesh(
     new THREE.PlaneGeometry(2.6, 7).rotateX(-Math.PI / 2),
-    new THREE.MeshBasicMaterial({ map: glowTexture(), color: 0xff2a1a, transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false })
+    new THREE.MeshBasicMaterial({ map: stainTexture(), color: 0xff2a1a, transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false })
   );
   m.position.set(0, 0.04, 4.2);
   return m;
