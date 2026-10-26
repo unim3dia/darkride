@@ -121,7 +121,8 @@ export class Vehicle {
     let spurHit = null;
     for (const sp of this.spurs) {
       const h = sp.query(this.pos.x, this.pos.z, this.pos.y);
-      if (h && Math.abs(h.d) < HW + 0.8 && this.pos.y > h.y - 2.5 && (!spurHit || h.y > spurHit.y)) spurHit = h;
+      // only a road you're actually on (or just above): not one running far below, whose walls would trap you
+      if (h && Math.abs(h.d) < HW + 0.8 && this.pos.y > h.y - 2.5 && this.pos.y < h.y + 12 && (!spurHit || h.y > spurHit.y)) spurHit = h;
     }
     const ramp = spurHit ? spurHit.y : -Infinity;
     const ground = Math.max(street, deck, ramp);

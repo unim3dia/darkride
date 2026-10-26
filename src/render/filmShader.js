@@ -30,8 +30,9 @@ export const FilmShader = {
     uniform vec2 uResolution;
     varying vec2 vUv;
 
-    float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
-    float hash1(float n) { return fract(sin(n) * 43758.5453); }
+    // sin-free hashes (Dave Hoskins): fract(sin(big)) bands into diagonal stripes on mobile GPUs
+    float hash(vec2 p) { vec3 p3 = fract(vec3(mod(p.xyx, 1024.0)) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+    float hash1(float n) { n = fract(mod(n, 1024.0) * 0.1031); n *= n + 33.33; n *= n + n; return fract(n); }
 
     // one layer of drops sliding down the glass
     vec3 drops(vec2 uv, float t, float scale, float seed) {

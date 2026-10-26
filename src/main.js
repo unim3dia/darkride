@@ -137,6 +137,28 @@ function raceFrame(dt) {
   return rr;
 }
 
+/**
+ * Wedged somewhere? Holding the gas without going anywhere for a few seconds
+ * lifts the car back onto the nearest stretch of road. So does landing off any
+ * surface after a warp.
+ */
+function unstick(dt, input, rr) {
+  const trying = state.mode === 'ride' && !state.fall && !rr.hold && (input.throttle > 0.5 || input.brake > 0.5);
+  const stuck = trying && vehicle.speed < 1.2 && !vehicle.airborne;
+  state.stuckT = stuck ? (state.stuckT || 0) + dt : 0;
+  const lost = state.mode === 'ride' && !vehicle.airborne && !vehicle.onRoad && !vehicle.spurHit && !placeAt(vehicle.pos.x, vehicle.pos.z, 0);
+  state.lostT = lost ? (state.lostT || 0) + dt : 0;
+  if (state.stuckT > 4 || state.lostT > 2.5) {
+    state.stuckT = state.lostT = 0;
+    const h = vehicle.spurHit;
+    if (h) { const p = h.spur.sample(h.t); vehicle.placeAt(p.x, p.y + 1.5, p.z, p.heading, 6); }
+    else vehicle.reset(vehicle.s, 0, 1.5, 6);
+    rig.offset = undefined;
+    state.aberration = 0.8;
+    audio.launch(0.5);
+  }
+}
+
 /** R-I-D-E: the switches throw the car up out of the world, a white flash, and you come down somewhere else. */
 function warp(name) {
   if (state.warping) return;
@@ -575,6 +597,7 @@ function tick(now) {
   if (state.warping && (state.warping.t += raw) > 0.45) landWarp();
 
   const rr = state.mode === 'ride' ? raceFrame(dt) : {};
+  unstick(dt, input, rr);
   const riding = state.mode === 'ride' && !state.fall && !rr.hold;
   const drive = riding ? input : { throttle: 0, brake: 0, steer: 0, hopHeld: false, hopPressed: false };
   if (rr.hold) vehicle.vel.multiplyScalar(Math.exp(-dt * 3.5)); // you roll to a stop on the line

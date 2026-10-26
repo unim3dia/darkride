@@ -3,7 +3,7 @@
 // and how much of a pocket you're "in" at any moment.
 import * as THREE from 'three';
 import { ROAD } from '../config.js';
-import { FORKS, DETOUR_PLANS, sample, rng } from './track.js';
+import { FORKS, DETOUR_PLANS, sample, rng, LOOP_LEN } from './track.js';
 import { pulseMat, fadingRoadMat } from '../render/pulseMaterial.js';
 import { MATS, merge, SHARED_MATS } from './props.js';
 import { Spur, spurRibbon } from './spur.js';
@@ -179,6 +179,9 @@ export class Forks {
 
     // five warnings on the ramp's side of the road, counting down to the split
     for (const dist of [1000, 750, 500, 300, 150]) {
+      // not down in the start district: there you're still on the streets, not the highway
+      const ws = ((sp.sA - dist) % LOOP_LEN + LOOP_LEN) % LOOP_LEN;
+      if (ws < 520 || ws > LOOP_LEN - 520) continue;
       const A = sample(sp.sA - dist);
       const d = sp.side * (HW + 2.6);
       post.push(new THREE.BoxGeometry(0.3, 4.4, 0.3).translate(A.x + A.nx * d, A.y + 2.2, A.z + A.nz * d));
