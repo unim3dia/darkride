@@ -195,7 +195,7 @@ export class Runes {
 // ---------------------------------------------------------------- the old trees
 
 /** A gnarled tree: a leaning trunk that splits by the golden ratio, with vines hanging. */
-function treeGeo(seed) {
+export function treeGeo(seed) {
   let s = seed * 7919 + 13;
   const r = () => ((s = (s * 9301 + 49297) % 233280) / 233280);
   const wood = [];

@@ -493,6 +493,22 @@ export class Audio {
     this.movieHit = hit;
   }
 
+  /** Hail: a hard, bright rattle on the roof and the road. */
+  hail(level) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    if (!this.hailGain) {
+      this.hailGain = this.gain(0);
+      this.loopNoise().connect(this.filter('highpass', 2500)).connect(this.filter('peaking', 5200, 2)).connect(this.hailGain).connect(this.master);
+      this.nextStone = 0;
+    }
+    this.hailGain.gain.setTargetAtTime(level * 0.05, t, 0.4);
+    if (level > 0.2 && t > this.nextStone) {
+      this.burst('bandpass', 3000 + Math.random() * 3000, 0.04 * level, 0.03, 6, 0.1);
+      this.nextStone = t + 0.01 + Math.random() * 0.05;
+    }
+  }
+
   /** A cave: a hollow, low room tone and the odd drip ringing off the rock. */
   cave(w) {
     if (!this.ctx) return;

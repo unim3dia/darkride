@@ -79,14 +79,14 @@ export const ZONES = [
   {
     name: 'THE RUINS',
     sub: 'the city that stayed up too late',
-    fog: 0x252334, skyTop: 0x0e0c18, skyHorizon: 0x463a62, glow: 0x6b4f8f,
+    fog: 0x262236, skyTop: 0x050309, skyHorizon: 0x5c3f86, glow: 0xa274c2,
     rim: 0xa497c8, kind: 'ruins', light: 0.3, exposure: 1.0, fogMul: 1.0, rainy: 0.5, grain: 1.05,
   },
   {
     name: 'THE MONOLITHS',
     sub: 'they were here before the road',
     fog: 0x3a3c40, skyTop: 0x0a0a0c, skyHorizon: 0x4c4e53, glow: 0x5c5f66,
-    rim: 0xa0a6ae, kind: 'monoliths', light: 0.12, exposure: 0.9, fogMul: 1.5, rainy: 0.15, grain: 1.45,
+    rim: 0xa0a6ae, kind: 'monoliths', light: 0.12, exposure: 0.9, fogMul: 1.9, rainy: 0.15, grain: 1.45,
   },
   {
     name: 'THE NARROWS',
@@ -116,7 +116,7 @@ export const ZONES = [
     name: 'UNDER THE TRESTLE',
     sub: 'sodium light, steel, and rain',
     fog: 0x2e261f, skyTop: 0x100c0a, skyHorizon: 0x4a3a2c, glow: 0x6a4a30,
-    rim: 0xc8a37a, kind: 'trestle', light: 0.28, exposure: 0.95, fogMul: 1.0, rainy: 0.6, grain: 1.0,
+    rim: 0xc8a37a, kind: 'trestle', light: 0.28, exposure: 0.95, fogMul: 1.35, rainy: 0.6, grain: 1.0,
   },
 ];
 

@@ -20,6 +20,7 @@ import { Forks } from './world/forks.js';
 import { DriveInMovie, LOT } from './world/driveIn.js';
 import { Race, RACE_PALETTE } from './world/race.js';
 import { Hood, hoodHalfWidth } from './world/hood.js';
+import { Atmos } from './world/atmos.js';
 import { Stampede, STAMPEDE, buildHerdRoad, herdRoadMesh, herdHalfWidth } from './world/stampede.js';
 import { collidersFrom, updateBodies } from './world/bodies.js';
 import { Vehicle } from './player/vehicle.js';
@@ -159,6 +160,38 @@ function unstick(dt, input, rr) {
     state.aberration = 0.8;
     audio.launch(0.5);
   }
+}
+
+/**
+ * Deep in Ephemera, now and then the camera sinks low behind the car and tilts
+ * up at the sky for a few beats, then drifts back to its post.
+ */
+const skyShot = (cam, v, dt) => {
+  const S = state.skyShot;
+  S.t += dt;
+  const w = THREE.MathUtils.smoothstep(S.t, 0, 1.6) * (1 - THREE.MathUtils.smoothstep(S.t, S.dur - 2, S.dur));
+  const f = v.forward.clone();
+  const r = new THREE.Vector3(-f.z, 0, f.x);
+  const p = v.pos.clone(); p.y += v.bodyY;
+  const chase = p.clone().addScaledVector(f, -8.5).addScaledVector(r, 1.8); chase.y += 2.2;
+  const chaseLook = p.clone().addScaledVector(f, 7); chaseLook.y += 1;
+  const low = p.clone().addScaledVector(f, -3.2).addScaledVector(r, 0.6); low.y += 0.55;
+  const up = p.clone().addScaledVector(f, 14); up.y += 14;
+  cam.position.copy(chase.lerp(low, w));
+  cam.lookAt(chaseLook.lerp(up, w));
+  cam.fov += (58 + 14 * w - cam.fov) * Math.min(1, dt * 3);
+  if (S.t >= S.dur) { rig.cine = null; state.skyShot = null; }
+};
+function skyGlide(dt) {
+  const h = vehicle.spurHit;
+  const deep = h && h.spur.kind === 'ephemera' && forks.weight > 0.6 && rig.view === 0;
+  state.nextSky = (state.nextSky ?? 8) - (deep ? dt : 0);
+  if (deep && !rig.cine && state.nextSky <= 0) {
+    state.skyShot = { t: 0, dur: 6.5 };
+    rig.cine = skyShot;
+    state.nextSky = 16 + Math.random() * 10;
+  }
+  if (!deep && rig.cine === skyShot) { rig.cine = null; state.skyShot = null; }
 }
 
 /** R-I-D-E: the switches throw the car up out of the world, a white flash, and you come down somewhere else. */
@@ -316,6 +349,7 @@ for (const dist of [600, 300, 120]) {
   const v = new THREE.Vector3(A.x - A.nx * (ROAD.HALF_WIDTH + 4), A.y + 5.4, A.z - A.nz * (ROAD.HALF_WIDTH + 4));
   district.signAt('THE CIRCUIT', `${dist} m · ← one lap`, v, Math.atan2(-A.tx, -A.tz), [0xe8f0ff, 0x7fd8ff]);
 }
+const atmos = new Atmos(scene);
 const stampede = new Stampede(scene);
 let herdRoadRef = null;
 let hoodRef = null;
@@ -694,6 +728,8 @@ function tick(now) {
   if (!pk.pocket && state.pocketShown) { state.pocketShown = null; state.zone = -1; }
   // under the road: no rain, no wind, its own name
   state.cave = pk.cave;
+  rig.close = pk.cave;
+  skyGlide(dt);
   audio.cave(pk.cave);
   if (pk.detour && pk.cave > 0.6 && state.caveShown !== pk.detour) {
     state.caveShown = pk.detour;
@@ -748,6 +784,13 @@ function tick(now) {
   state.aberration *= Math.exp(-raw * 4);
   post.uAberration.value = state.aberration + (vehicle.airborne ? 0.08 : 0);
   post.uTime.value = state.time;
+  // the place's own weather: a lid of fog, banks at the lens, hail
+  const sky = state.mode === 'ride' && !vehicle.spurHit ? atmos.update(raw, state.time, vehicle.s, camera) : atmos.update(raw, state.time, null, camera);
+  post.uTopFog.value = sky.top;
+  post.uGust.value = sky.gust;
+  post.uGustCol.value.copy(scene.fog.color).lerp(new THREE.Color(0.75, 0.77, 0.8), 0.5);
+  scene.fog.density *= 1 + sky.gust * 1.5 + sky.hail * 0.4;
+  audio.hail(sky.hail);
   post.uGrain.value = 0.085 * ambient.grain + (vehicle.airborne ? 0.03 : 0);
   // lens weather: the windshield is wiped; the outside camera just gets rained on
   carView.raining = rainHere > 0.12;
@@ -774,7 +817,7 @@ function tick(now) {
 }
 
 // expose a tiny handle for debugging in the console
-window.__darkride = { vehicle, state, chunks, rig, ROAD, particles, watchers, carView, scene, renderer, district, narrows, places, answerers, emitPulse, ambient, forks, audio, warmStart, race, movie, stampede, herdRoad };
+window.__darkride = { vehicle, state, chunks, rig, ROAD, particles, watchers, carView, scene, renderer, district, narrows, places, answerers, emitPulse, ambient, forks, audio, warmStart, race, movie, stampede, herdRoad, atmos, hood };
 if (TEST) import('./core/testkit.js').then((m) => m.installTestKit(window.__darkride));
 if (new URLSearchParams(location.search).has('reel')) import('./core/reel.js').then((m) => m.installReel(window.__darkride));
 schedule(tick);

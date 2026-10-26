@@ -78,11 +78,12 @@ export class CameraRig {
       model.driver.visible = true;
     } else {
       { const st = model.steering; st.upper.visible = st.shoulderJoint.visible = st.elbowJoint.visible = true; }
-      const back = 7.8 + speed * 0.05 + (v.airborne ? 1.5 : 0);
+      // (somewhere tight, like the cave, it pulls in close behind you)
+      const back = (7.8 + speed * 0.05 + (v.airborne ? 1.5 : 0)) * (1 - 0.42 * (this.close || 0));
       // set off to the right of the car: a three-quarter view down its flank, not a dead-center bumper shot
       // (in the herd's country: lower and looking up, so the beasts take the frame)
       const h = this.herd || 0;
-      desired = vp.clone().addScaledVector(f, -back).addScaledVector(r, 1.8).setY(carY + 2.0 - h * 0.7 + (v.airborne ? 0.9 : 0));
+      desired = vp.clone().addScaledVector(f, -back).addScaledVector(r, 1.8 * (1 - 0.4 * (this.close || 0))).setY(carY + 2.0 - h * 0.7 - (this.close || 0) * 0.6 + (v.airborne ? 0.9 : 0));
       look.copy(vp).addScaledVector(f, 7).addScaledVector(r, 0.2).setY(carY + 1.1 + h * 2.6);
       fov = 56 + speed * 0.32;
       stiffness = 7;

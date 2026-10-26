@@ -18,6 +18,10 @@ export const FilmShader = {
     uEcho: { value: 0.0 },       // the picture doubled, breathing in and out of itself
     uSoft: { value: 0.0 },       // focus let go
     uResolution: { value: new THREE.Vector2(1, 1) },
+    uTopFog: { value: 0.0 },     // a lid of dark fog over the top of the frame
+    uTopCol: { value: new THREE.Color(0.11, 0.115, 0.12) },
+    uGust: { value: 0.0 },       // a bank of fog right at the lens, nearly washing the picture out
+    uGustCol: { value: new THREE.Color(0.7, 0.72, 0.74) },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -25,7 +29,8 @@ export const FilmShader = {
   `,
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse;
-    uniform float uTime, uGrain, uAberration, uVignette, uFlash, uFade, uWet, uWind, uWashAmt, uEcho, uSoft;
+    uniform float uTime, uGrain, uAberration, uVignette, uFlash, uFade, uWet, uWind, uWashAmt, uEcho, uSoft, uTopFog, uGust;
+    uniform vec3 uTopCol, uGustCol;
     uniform vec3 uWash;
     uniform vec2 uResolution;
     varying vec2 vUv;
@@ -99,6 +104,18 @@ export const FilmShader = {
       float lw = dot(col, vec3(0.299, 0.587, 0.114));
       col = mix(col, uWash * lw * 1.35, uWashAmt);
 
+      // the lid: dark grey fog thickening toward the top quarter, drifting
+      {
+        float drift = 0.08 * sin(vUv.x * 5.0 + uTime * 0.05) + 0.05 * sin(vUv.x * 11.0 - uTime * 0.08);
+        float lid = smoothstep(0.58, 0.95, vUv.y + drift);
+        col = mix(col, uTopCol, lid * uTopFog);
+      }
+      // a gust: fog sweeping across the lens, uneven, then gone
+      if (uGust > 0.001) {
+        float n = hash(floor(vUv * vec2(9.0, 5.0) + vec2(uTime * 0.6, 0.0)));
+        float sweep = 0.6 + 0.4 * sin(vUv.x * 3.0 + vUv.y * 2.0 + uTime * 1.3) * (0.7 + 0.3 * n);
+        col = mix(col, uGustCol, clamp(uGust * sweep, 0.0, 0.95));
+      }
       col *= 1.0 - smoothstep(0.18, 0.78, r2 * uVignette);
 
       // shutter flicker: exposure is never quite constant
