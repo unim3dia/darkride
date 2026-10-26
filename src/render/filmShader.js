@@ -22,6 +22,8 @@ export const FilmShader = {
     uTopCol: { value: new THREE.Color(0.11, 0.115, 0.12) },
     uGust: { value: 0.0 },       // a bank of fog right at the lens, nearly washing the picture out
     uGustCol: { value: new THREE.Color(0.7, 0.72, 0.74) },
+    // mud on the lens: x, y (0..1), size, how much is left (0..1); drips grow as it ages
+    uSplat: { value: Array.from({ length: 8 }, () => new THREE.Vector4(0, 0, 0, 0)) },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -31,6 +33,7 @@ export const FilmShader = {
     uniform sampler2D tDiffuse;
     uniform float uTime, uGrain, uAberration, uVignette, uFlash, uFade, uWet, uWind, uWashAmt, uEcho, uSoft, uTopFog, uGust;
     uniform vec3 uTopCol, uGustCol;
+    uniform vec4 uSplat[8];
     uniform vec3 uWash;
     uniform vec2 uResolution;
     varying vec2 vUv;
@@ -115,6 +118,23 @@ export const FilmShader = {
         float n = hash(floor(vUv * vec2(9.0, 5.0) + vec2(uTime * 0.6, 0.0)));
         float sweep = 0.6 + 0.4 * sin(vUv.x * 3.0 + vUv.y * 2.0 + uTime * 1.3) * (0.7 + 0.3 * n);
         col = mix(col, uGustCol, clamp(uGust * sweep, 0.0, 0.95));
+      }
+      // mud: a clod hits the lens, smears, and runs down in drips
+      for (int i = 0; i < 8; i++) {
+        vec4 sp = uSplat[i];
+        if (sp.w <= 0.001) continue;
+        vec2 d = (vUv - sp.xy) * vec2(uResolution.x / uResolution.y, 1.0);
+        float ang = atan(d.y, d.x);
+        float edge = sp.z * (0.75 + 0.25 * sin(ang * 7.0 + sp.x * 40.0) + 0.12 * sin(ang * 13.0));
+        float blob = smoothstep(edge, edge * 0.7, length(d));
+        // drips run down from the bottom, longer as the splat ages
+        float run = (1.0 - sp.w) * 0.35 + 0.04;
+        float dx = d.x / (sp.z * 0.35) + 3.0 * sin(sp.y * 50.0);
+        float lane = fract(dx * 0.5) - 0.5;
+        float drip = step(abs(lane), 0.18) * smoothstep(0.0, -0.02, d.y) * smoothstep(-run, -run * 0.5, d.y) * step(abs(d.x), sp.z);
+        float m = max(blob, drip * 0.8) * sp.w;
+        vec3 mud = vec3(0.09, 0.06, 0.035) * (0.8 + 0.4 * hash(floor(gl_FragCoord.xy / 2.0)));
+        col = mix(col, mud, clamp(m, 0.0, 0.96));
       }
       col *= 1.0 - smoothstep(0.18, 0.78, r2 * uVignette);
 

@@ -21,6 +21,10 @@ import { DriveInMovie, LOT } from './world/driveIn.js';
 import { Race, RACE_PALETTE } from './world/race.js';
 import { Hood, hoodHalfWidth } from './world/hood.js';
 import { Atmos } from './world/atmos.js';
+import { CarWash } from './world/carWash.js';
+import { DriveThru } from './world/driveThru.js';
+import { Mud } from './world/mud.js';
+import { Jumps } from './world/jumps.js';
 import { Stampede, STAMPEDE, buildHerdRoad, herdRoadMesh, herdHalfWidth } from './world/stampede.js';
 import { collidersFrom, updateBodies } from './world/bodies.js';
 import { Vehicle } from './player/vehicle.js';
@@ -69,7 +73,7 @@ for (const p of places) chunks.extras.push(p.chunk);
 const forks = new Forks(scene);
 vehicle.spurs = [...forks.spurs, ...forks.detours];
 for (const c of forks.chunks) chunks.extras.push(c);
-chunks.avoid = (x, z) => !!placeAt(x, z, 40) || (raceRef && raceRef.near(x, z)) || forks.near(x, z) || (herdRoadRef && herdNear(x, z)) || (hoodRef && hoodRef.near(x, z));
+chunks.avoid = (x, z) => !!placeAt(x, z, 40) || sidesRef.some((sp) => sp.near(x, z)) || (raceRef && raceRef.near(x, z)) || forks.near(x, z) || (herdRoadRef && herdNear(x, z)) || (hoodRef && hoodRef.near(x, z));
 vehicle.street = { contains: (x, z, margin = 0) => !!placeAt(x, z, margin) };
 rig.clip = (from, to) => {
   const safe = (placeAt(to.x, to.z, 30) || district).clipCamera(from, to);
@@ -112,6 +116,7 @@ function warpSpots() {
   });
   // the drive-in, nosed toward the screen; the middle of the Narrows
   spots.push({ name: 'drive-in', go: () => { const p = district.toWorld(LOT.u1 - 30, LOT.aisleV); vehicle.placeAt(p.x, 0, p.z, -district.yawToward(-1, 0), 4); } });
+  for (const [n, pl, u] of [['wash', wash, 0.4], ['drive-thru', drive, 0.38], ['mud', mud, 0.2], ['jumps', jumps, 0.16]]) spots.push({ name: n, go: () => { const p = pl.spur.sample(pl.tAt(u)); vehicle.placeAt(p.x, p.y + 0.4, p.z, p.heading, 18); } });
   spots.push({ name: 'block', go: () => { const p = hood.spur.sample(hood.spur.N * 0.3); vehicle.placeAt(p.x, p.y + 0.4, p.z, p.heading, 16); } });
   spots.push({ name: 'narrows', go: () => vehicle.reset(narrows.s0, 0, 0, 16) });
   spots.push({ name: 'charge', go: () => { const p = herdRoad.sample(herdRoad.N * 0.2); vehicle.placeAt(p.x, p.y + 0.4, p.z, p.heading, 24); } });
@@ -193,6 +198,62 @@ function skyGlide(dt) {
   }
   if (!deep && rig.cine === skyShot) { rig.cine = null; state.skyShot = null; }
 }
+
+/** The new places, each frame: their light, their walls, their moments. */
+function sidesFrame(dt) {
+  for (const pl of sidesRef) {
+    const h = pl.hit(vehicle);
+    pl.clamp(vehicle, h, dt);
+    if (pl.w > 0.01 && !ambient.pocket) ambient.pocket = { weight: pl.w, palette: SIDE_PALETTES.get(pl) };
+    if (h && pl.w > 0.6 && !pl.shown) { pl.shown = true; screens.showCard(pl.name, pl.sub); }
+    if (!h) pl.shown = false;
+  }
+  // the car wash takes the wheel, and the camera climbs inside
+  const wo = wash.update(dt, state.time, vehicle, carView.model.body);
+  state.washTake = !!wo.take;
+  if (wo.start) {
+    state.washPrevView = rig.view;
+    state.washCam = { t: 0 };
+    rig.cine = washCam;
+    audio.wash(true);
+  }
+  state.washHue = wo.take ? wo.hue : null;
+  if (wo.end) { audio.wash(false); rig.view = state.washPrevView ?? 0; rig.offset = undefined; screens.showCard('CLEAN', 'drive safe'); }
+  // the drive-thru
+  const dr = drive.update(dt, state.time, vehicle);
+  if (dr.speak) { audio.drivethru(); screens.showCard('…welcome to burger night…', 'may i take your… order'); }
+  if (dr.served) screens.showCard('thank you', 'please drive… forward');
+  // the mud
+  const mo = mud.update(dt, state.time, vehicle, rig.name);
+  mo.splats.forEach((sp, i) => post.uSplat.value[i].set(sp.x, sp.y, sp.r, sp.a));
+  if (mo.hit) audio.bump(3);
+  audio.mud(mo.mud ? Math.min(1, vehicle.speed / 25) : 0);
+  // the jumps
+  const jo = jumps.update(dt, state.time, vehicle);
+  if (jo.through) { audio.tone(880, 0.12, 0.9, { wet: 0.7 }); audio.tone(1320, 0.08, 1.1, { wet: 0.8, delay: 0.08 }); }
+  if (jo.air && jo.air > 1.4) screens.showCard(`${jo.air.toFixed(1)} s`, 'of air');
+}
+
+/** Into the car wash: the camera flies forward through the back glass and settles in the driver's seat. */
+const washCam = (cam, v, dt) => {
+  const S = state.washCam;
+  S.t += dt;
+  const k = THREE.MathUtils.smoothstep(S.t, 0, 2.8);
+  const f = v.forward.clone();
+  const r = new THREE.Vector3(-f.z, 0, f.x);
+  const p = v.pos.clone(); p.y += v.bodyY;
+  const from = p.clone().addScaledVector(f, -8.5).addScaledVector(r, 1.8); from.y += 2.2;
+  const seat = new THREE.Vector3(); carView.model.driver.getWorldPosition(seat);
+  seat.addScaledVector(f, 0.12).y += 0.04;
+  // a little lift as it comes in over the trunk, then down through the rear window
+  const mid = p.clone().addScaledVector(f, 1.6); mid.y += 1.35;
+  const a = from.clone().lerp(mid, Math.min(1, k * 1.6));
+  cam.position.copy(a.lerp(seat, Math.max(0, (k - 0.55) / 0.45)));
+  const look = p.clone().addScaledVector(f, 20); look.y += 0.4;
+  cam.lookAt(look);
+  cam.fov += (64 - cam.fov) * Math.min(1, dt * 3);
+  if (S.t > 2.9) { rig.cine = null; rig.view = 2; }
+};
 
 /** R-I-D-E: the switches throw the car up out of the world, a white flash, and you come down somewhere else. */
 function warp(name) {
@@ -354,6 +415,7 @@ const stampede = new Stampede(scene);
 let herdRoadRef = null;
 let hoodRef = null;
 let raceRef = null;
+let sidesRef = [];
 function herdNear(x, z) {
   const b = herdRoadRef.box;
   if (x < b.minX - 200 || x > b.maxX + 200 || z < b.minZ - 200 || z > b.maxZ + 200) return false;
@@ -375,6 +437,29 @@ for (const dist of [400, 200]) {
   const v = new THREE.Vector3(A.x - A.nx * (ROAD.HALF_WIDTH + 4), A.y + 5.4, A.z - A.nz * (ROAD.HALF_WIDTH + 4));
   district.signAt('THE BLOCK', `${dist} m · ← one shot`, v, Math.atan2(-A.tx, -A.tz), [0xffa860, 0xe8d2a8]);
 }
+// the new places: rest stop + car wash, the drive-thru, the mud flats, the jumps
+const wash = new CarWash(scene);
+const drive = new DriveThru(scene);
+const mud = new Mud(scene);
+const jumps = new Jumps(scene);
+const sides = [wash, drive, mud, jumps];
+for (const sp of sides) vehicle.spurs.push(sp.spur);
+sidesRef = sides;
+const SIDE_SIGNS = [[wash, 'REST STOP', 'gas · car wash →'], [drive, 'BURGER NIGHT', 'drive-thru →'], [mud, 'THE MUD FLATS', '← floor it'], [jumps, 'THE JUMPS', 'big air →']];
+for (const [pl, title, sub] of SIDE_SIGNS) {
+  for (const dist of [400, 200]) {
+    const A = sample(pl.spur.sA - dist);
+    const side = pl.def.side;
+    const v = new THREE.Vector3(A.x + A.nx * side * (ROAD.HALF_WIDTH + 4), A.y + 5.4, A.z + A.nz * side * (ROAD.HALF_WIDTH + 4));
+    district.signAt(title, `${dist} m · ${sub}`, v, Math.atan2(-A.tx, -A.tz), [0xffe0b0, 0xffa060]);
+  }
+}
+const SIDE_PALETTES = new Map([
+  [wash, { fog: 0x1c1d20, skyTop: 0x050506, skyHorizon: 0x24262a, glow: 0x30343a, light: 0.2, exposure: 0.95, fogMul: 1.0, grain: 1.3, rain: 0.2 }],
+  [drive, { fog: 0x1e1612, skyTop: 0x060404, skyHorizon: 0x2c1e16, glow: 0x3a2618, light: 0.14, exposure: 0.92, fogMul: 1.1, grain: 1.4, rain: 0.3 }],
+  [mud, { fog: 0x3a2c1e, skyTop: 0x120c08, skyHorizon: 0x4a3626, glow: 0x5c4430, light: 0.3, exposure: 1.0, fogMul: 1.2, grain: 1.6, rain: 0.6 }],
+  [jumps, { fog: 0x0a1220, skyTop: 0x02040a, skyHorizon: 0x14243c, glow: 0x2a4a7a, light: 0.3, exposure: 1.0, fogMul: 0.7, grain: 1.4, rain: 0 }],
+]);
 // almost no light: the street lives on its windows
 const HOOD_PALETTE = { fog: 0x1a1714, skyTop: 0x050506, skyHorizon: 0x221d18, glow: 0x2c241c, light: 0.16, exposure: 0.95, fogMul: 0.9, grain: 1.5, rain: 0.2 };
 {
@@ -423,6 +508,7 @@ window.addEventListener('pointerdown', startRide);
       forks, herdRoad, hood, race, district, narrows,
       driveIn: district.toWorld((LOT.u0 + LOT.u1) / 2, LOT.aisleV),
       start: district.toWorld(150, district.roadV(150)),
+      extras: sidesRef.map((pl) => pl.mapPin()),
     };
     const src = drawMap(D, 2000);
     const cv = document.getElementById('map-canvas');
@@ -662,7 +748,7 @@ function tick(now) {
 
   const rr = state.mode === 'ride' ? raceFrame(dt) : {};
   unstick(dt, input, rr);
-  const riding = state.mode === 'ride' && !state.fall && !rr.hold;
+  const riding = state.mode === 'ride' && !state.fall && !rr.hold && !state.washTake;
   const drive = riding ? input : { throttle: 0, brake: 0, steer: 0, hopHeld: false, hopPressed: false };
   if (rr.hold) vehicle.vel.multiplyScalar(Math.exp(-dt * 3.5)); // you roll to a stop on the line
   const ev = physics(dt, drive);
@@ -718,6 +804,7 @@ function tick(now) {
   if (hev.swish) { audio.tone(523.25, 0.12, 1.2, { wet: 0.7 }); audio.tone(659.25, 0.1, 1.4, { wet: 0.7, delay: 0.12 }); audio.tone(783.99, 0.1, 1.8, { wet: 0.8, delay: 0.24 }); screens.showCard('SWISH', 'from downtown'); }
   if (hev.miss === 'rim') { audio.tone(220, 0.2, 0.6, { type: 'triangle', to: 180, wet: 0.6 }); screens.showCard('OFF THE RIM', 'so close'); }
   if (hev.miss === 'air') screens.showCard('AIRBALL', 'the block saw that');
+  sidesFrame(dt);
   audio.stampede(herd.w, herd.near, herd.intensity || 0, herd.score ? herd.score.vortex : 0);
   if (herd.w > 0.5 && !state.herdShown) { state.herdShown = true; screens.showCard('THE CHARGE', 'they were running long before the road'); }
   if (herd.w < 0.05) state.herdShown = false;
@@ -768,7 +855,7 @@ function tick(now) {
   renderer.toneMappingExposure += (ambient.exposure * 1.05 - renderer.toneMappingExposure) * Math.min(1, raw);
   const rainHere = ambient.rain * (1 - (state.cave || 0));
   rain.update(dt, camera.position, vehicle.vel, rainHere);
-  carView.inside = rig.name === 'cabin' && !rig.cine;
+  carView.inside = (rig.name === 'cabin' && !rig.cine) || (rig.cine === washCam && state.washCam && state.washCam.t > 1.8);
   carView.sync(vehicle, state.time, dt);
   if (!state.fall || !state.fall.reset || state.fall.t > 2.2) {
     if (state.fall && !state.fall.reset) rig.camera.lookAt(vehicle.pos);
@@ -809,6 +896,8 @@ function tick(now) {
     if (fx) post.uWash.value.setRGB(...fx.wash);
     post.uEcho.value = fx ? fx.echo * w : 0;
     post.uSoft.value = fx ? fx.soft * w : 0;
+    // inside the car wash, light through coloured soap
+    if (state.washHue != null) { post.uWashAmt.value = 0.38; post.uWash.value.setHSL(state.washHue, 0.85, 0.62); post.uEcho.value = 0.15; }
     if (fx) trails.uniforms.damp.value += (fx.trails - trails.uniforms.damp.value) * w;
     bloom.strength = 0.7 + (fx ? (fx.bloom - 0.7) * w : 0);
   }
@@ -817,7 +906,7 @@ function tick(now) {
 }
 
 // expose a tiny handle for debugging in the console
-window.__darkride = { vehicle, state, chunks, rig, ROAD, particles, watchers, carView, scene, renderer, district, narrows, places, answerers, emitPulse, ambient, forks, audio, warmStart, race, movie, stampede, herdRoad, atmos, hood };
+window.__darkride = { vehicle, state, chunks, rig, ROAD, particles, watchers, carView, scene, renderer, district, narrows, places, answerers, emitPulse, ambient, forks, audio, warmStart, race, movie, stampede, herdRoad, atmos, hood, wash, drive, mud, jumps };
 if (TEST) import('./core/testkit.js').then((m) => m.installTestKit(window.__darkride));
 if (new URLSearchParams(location.search).has('reel')) import('./core/reel.js').then((m) => m.installReel(window.__darkride));
 schedule(tick);

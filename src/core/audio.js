@@ -493,6 +493,93 @@ export class Audio {
     this.movieHit = hit;
   }
 
+  /** The wash: a deep motor hum, water hiss, and the slap of cloth when it's going. */
+  wash(on) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    if (!this.washGain) {
+      this.washGain = this.gain(0);
+      this.loopNoise().connect(this.filter('bandpass', 1800, 0.5)).connect(this.washGain).connect(this.master);
+      const hum = this.ctx.createOscillator();
+      hum.type = 'sawtooth'; hum.frequency.value = 55;
+      const hg = this.gain(0.25);
+      hum.connect(this.filter('lowpass', 160)).connect(hg).connect(this.washGain);
+      hum.start();
+      this.washGain.connect(this.verbIn);
+    }
+    this.washGain.gain.setTargetAtTime(on ? 0.12 : 0, t, on ? 0.6 : 1.2);
+    clearInterval(this.washSlap);
+    if (on) this.washSlap = setInterval(() => this.burst('lowpass', 400 + Math.random() * 300, 0.06, 0.12, 1, 0.3), 260);
+  }
+
+  /** Tires churning mud: a wet low rumble rising with speed, and the squelch of clods. */
+  mud(level) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    if (!this.mudGain) {
+      this.mudGain = this.gain(0);
+      this.loopNoise().connect(this.filter('lowpass', 380, 3)).connect(this.mudGain).connect(this.master);
+      this.nextSquelch = 0;
+    }
+    this.mudGain.gain.setTargetAtTime(level * 0.16, t, 0.2);
+    if (level > 0.15 && t > this.nextSquelch) {
+      this.tone(90 + Math.random() * 60, 0.05 * level, 0.12, { to: 50, wet: 0.1 });
+      this.nextSquelch = t + 0.06 + Math.random() * 0.15;
+    }
+  }
+
+  /**
+   * The drive-thru speaker: a recording that has played to nobody for years.
+   * Speech-shaped — formant syllables through a cheap speaker, with tape wow.
+   */
+  drivethru() {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const t0 = ctx.currentTime + 0.4;
+    const out = this.gain(0.9);
+    const speaker = this.filter('bandpass', 1300, 0.7);
+    const drive = ctx.createWaveShaper();
+    const curve = new Float32Array(256);
+    for (let i = 0; i < 256; i++) { const x = i / 128 - 1; curve[i] = Math.tanh(x * 3); }
+    drive.curve = curve;
+    out.connect(drive).connect(speaker).connect(this.master);
+    speaker.connect(this.verbIn);
+    // crackle under it all
+    const hiss = this.gain(0.012);
+    const n = this.loopNoise();
+    n.connect(this.filter('bandpass', 3000, 0.8)).connect(hiss).connect(this.master);
+    const VOWELS = [[730, 1090], [270, 2290], [300, 870], [530, 1840], [640, 1190], [490, 1350]];
+    const phrases = [9, 7, 6];
+    let t = t0;
+    for (const syl of phrases) {
+      for (let i = 0; i < syl; i++) {
+        const dur = 0.11 + Math.random() * 0.12;
+        const [f1, f2] = VOWELS[Math.floor(Math.random() * VOWELS.length)];
+        const src = ctx.createOscillator();
+        src.type = 'sawtooth';
+        const pitch = 165 * (1 + 0.08 * Math.sin(i * 1.3)) * (i === syl - 1 ? 0.85 : 1);
+        src.frequency.setValueAtTime(pitch, t);
+        src.frequency.linearRampToValueAtTime(pitch * (0.94 + Math.random() * 0.1), t + dur);
+        // tape wow: the whole thing sags and recovers
+        const wow = ctx.createOscillator();
+        wow.frequency.value = 0.7;
+        const wg = this.gain(6);
+        wow.connect(wg).connect(src.frequency);
+        const g = this.gain(0);
+        for (const [f, q] of [[f1, 8], [f2, 10]]) src.connect(this.filter('bandpass', f, q)).connect(g);
+        g.connect(out);
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(0.9, t + 0.02);
+        g.gain.setValueAtTime(0.9, t + dur * 0.7);
+        g.gain.linearRampToValueAtTime(0, t + dur);
+        src.start(t); src.stop(t + dur + 0.05); wow.start(t); wow.stop(t + dur + 0.05);
+        t += dur + (Math.random() < 0.15 ? 0.12 : 0.02);
+      }
+      t += 0.55;
+    }
+    setTimeout(() => { n.stop(); }, (t - ctx.currentTime + 0.5) * 1000);
+  }
+
   /** Hail: a hard, bright rattle on the roof and the road. */
   hail(level) {
     if (!this.ctx) return;

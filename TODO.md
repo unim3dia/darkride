@@ -23,15 +23,23 @@ Status: [ ] to do · [x] done · [~] partly done (see note)
 - [x] C6. Ruins: wider purple gradient in the sky; dark clouds brewing.
 - [x] C7. Hollow: keep it dark (it works). Camera too far away in there: bring it in.
 
-## D. New places
-- [ ] D1. Colonnade, off-ramp right: rest stop with a huge gas station (18 pumps) and a drive-through car wash. Drive in → it stops you → conveyor pulls you through → camera flies forward through the rear window into the cabin view → suds, long hanging cloth strips, spinning brushes, psychedelic colour on the glass → spits you out → back to the road.
-- [ ] D2. Zone 9 (the purple zone with cars hanging on chains): off-ramp down a parkway to an abandoned fast-food drive-thru. At the menu board, a muffled leftover recording plays. Get your order, back onto the road.
-- [ ] D3. MUD level: the car churns through mud flinging it left, right, up, back; clods splat on the camera lens and smear, then drip away. A crazy fun mud storm.
-- [ ] D4. JUMP level: abstract, a field of ramps and hills that launch you; land on the next one; big flight.
+## D. New places  (exits in track.js EXITS; base class world/sidePlace.js; wired in main sidesFrame)
+- [x] D1. Colonnade, off-ramp right: rest stop with a huge gas station (18 pumps) and a drive-through car wash. Drive in → it stops you → conveyor pulls you through → camera flies forward through the rear window into the cabin view → suds, long hanging cloth strips, spinning brushes, psychedelic colour on the glass → spits you out → back to the road.
+- [x] D2. Zone 9 (the purple zone with cars hanging on chains): off-ramp down a parkway to an abandoned fast-food drive-thru. At the menu board, a muffled leftover recording plays. Get your order, back onto the road.
+- [x] D3. MUD level: the car churns through mud flinging it left, right, up, back; clods splat on the camera lens and smear, then drip away. A crazy fun mud storm.
+- [x] D4. JUMP level: abstract, a field of ramps and hills that launch you; land on the next one; big flight.
 
 ## E. Menus and names
 - [x] E1. Title screen: a MAP option showing the whole course clearly (no overlapping words), with all the new places. → MAP button on the title; drawn live from game data, labels auto-spaced. New places register via `D.extras` in mapView.
 - [x] E2. Rename THE STAMPEDE → THE CHARGE.
+
+## Follow-ups to look at on Wednesday
+- [ ] iPad: confirm the grain bands are gone (A1).
+- [ ] Car wash: foam amount/size, brush placement — judge on device.
+- [ ] Drive-thru: the "voice" is synthesized babble (no real words); subtitles carry the words. Tune if it's too clean or too garbled.
+- [ ] Mud: grip/drag feel; splat frequency.
+- [ ] Jumps: lip height / gap length — first test hit 10.7 m of air at ~34 m/s.
+- [ ] Map labels inside the ring near the Ether can crowd; consider moving inner labels outward.
 
 ## Notes
 - Live site: https://unim3dia.github.io/darkride/ · `?at=<place>` jumps there for testing.

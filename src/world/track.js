@@ -285,38 +285,39 @@ export const DETOUR_PLANS = DETOUR_DEFS.map((def) => {
  * The herd's road: far round the ring from the start, it peels off to the right
  * like any off-ramp, bows out across the dark, and merges back further on.
  */
-export const HERD = (() => {
-  const f = { at: 0.68, side: 1, len: 1250, D: 300, lift: -4, kind: 'herd' };
+/** An exit: a road that peels off the ring to `side`, bows `D` meters out, and rejoins `len` later. */
+function exit(f) {
   const sA = f.at * LOOP_LEN;
   const uSep = Math.asin(Math.sqrt((2 * (ROAD.HALF_WIDTH + 0.8)) / f.D)) / Math.PI;
   return { ...f, sA, sB: sA + f.len, uSep };
-})();
+}
 
-/** The circuit: one long lap of an off-ramp, leaving to the left just past the Narrows. */
-export const RACE = (() => {
-  const f = { at: 0.53, side: -1, len: 1700, D: 420, lift: 8, kind: 'race' };
-  const sA = f.at * LOOP_LEN;
-  const uSep = Math.asin(Math.sqrt((2 * (ROAD.HALF_WIDTH + 0.8)) / f.D)) / Math.PI;
-  return { ...f, sA, sB: sA + f.len, uSep };
-})();
-
+/** The herd's road, far round the ring. */
+export const HERD = exit({ at: 0.68, side: 1, len: 1250, D: 300, lift: -4, kind: 'herd' });
+/** The circuit: one long lap, leaving to the left just past the Narrows. */
+export const RACE = exit({ at: 0.53, side: -1, len: 1700, D: 420, lift: 8, kind: 'race' });
 /** A short loop off the left side of the Ruins, through a forgotten neighbourhood. */
-export const HOOD = (() => {
-  const f = { at: 0.225, side: -1, len: 620, D: 150, lift: -5, kind: 'hood' };
-  const sA = f.at * LOOP_LEN;
-  const uSep = Math.asin(Math.sqrt((2 * (ROAD.HALF_WIDTH + 0.8)) / f.D)) / Math.PI;
-  return { ...f, sA, sB: sA + f.len, uSep };
-})();
+export const HOOD = exit({ at: 0.225, side: -1, len: 620, D: 150, lift: -5, kind: 'hood' });
+/** The rest stop in the Colonnade: gas station and car wash, off to the right. */
+export const WASH = exit({ at: 0.552, side: 1, len: 380, D: 120, lift: -3, kind: 'wash' });
+/** Zone 9: down a parkway to a drive-thru nobody works at. */
+export const DRIVE = exit({ at: 0.805, side: 1, len: 480, D: 150, lift: -6, kind: 'drive' });
+/** Pines, to the left: the mud flats. */
+export const MUD = exit({ at: 0.06, side: -1, len: 900, D: 260, lift: -6, kind: 'mud' });
+/** Under the Trestle, to the right: a field of ramps in the void. */
+export const JUMPS = exit({ at: 0.872, side: 1, len: 820, D: 300, lift: 6, kind: 'jumps' });
+
+const EXITS = [HERD, RACE, HOOD, WASH, DRIVE, MUD, JUMPS];
 
 /** Stretches where the highway's barrier is open on `side`, beyond the forks themselves. */
 function extraOpenings(side) {
-  if (side < 0) {
-    const lap = HOOD.uSep * HOOD.len;
-    const rl = RACE.uSep * RACE.len;
-    return [...DETOUR_PLANS.map((p) => p.open), [HOOD.sA - 3, HOOD.sA + lap], [HOOD.sB - lap, HOOD.sB + 3], [RACE.sA - 3, RACE.sA + rl], [RACE.sB - rl, RACE.sB + 3]];
+  const out = side < 0 ? DETOUR_PLANS.map((p) => p.open) : [];
+  for (const e of EXITS) {
+    if (e.side !== side) continue;
+    const lap = e.uSep * e.len;
+    out.push([e.sA - 3, e.sA + lap], [e.sB - lap, e.sB + 3]);
   }
-  const lap = HERD.uSep * HERD.len;
-  return [[HERD.sA - 3, HERD.sA + lap], [HERD.sB - lap, HERD.sB + 3]];
+  return out;
 }
 
 const BARE = [];
