@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { DRIVE } from './track.js';
 import { SidePlace } from './sidePlace.js';
 import { merge } from './props.js';
+import { buildStaticCar } from '../player/carModel.js';
 
 const P = {};
 
@@ -112,20 +113,39 @@ export class DriveThru extends SidePlace {
     sign.rotation.y = -Math.PI / 2;
     g.add(sign);
     this.signMat = sign.material;
-    g.position.set(P.x + P.nx * 12.5, P.y, P.z + P.nz * 12.5);
-    g.rotation.y = -P.heading;
+    // the building stands on the driver's side of the lane, its window facing you
+    g.position.set(P.x - P.nx * 12.5, P.y, P.z - P.nz * 12.5);
+    g.rotation.y = -P.heading + Math.PI;
+    // the lot: asphalt all round the building, faded bays, a couple of cars nobody came back for
+    const lot = new THREE.Mesh(new THREE.PlaneGeometry(64, 90).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x141416, roughness: 0.55, metalness: 0.1, envMapIntensity: 0.7 }));
+    lot.position.set(P.x - P.nx * 14, P.y + 0.02, P.z - P.nz * 14);
+    lot.rotation.y = -P.heading;
+    this.group.add(lot);
+    const bays = [];
+    for (let k = -4; k <= 4; k++) bays.push(new THREE.PlaneGeometry(0.15, 5).rotateX(-Math.PI / 2).translate(-30, 0.04, k * 3.2));
+    const bayMesh = new THREE.Mesh(merge(bays), new THREE.MeshBasicMaterial({ color: 0x55534c }));
+    bayMesh.position.copy(lot.position);
+    bayMesh.rotation.y = -P.heading;
+    this.group.add(bayMesh);
+    for (const k of [-2, 1]) {
+      const car = buildStaticCar(true);
+      car.position.set(P.x - P.nx * 40 + P.tx * k * 3.2, P.y, P.z - P.nz * 40 + P.tz * k * 3.2);
+      car.rotation.y = -P.heading + Math.PI / 2;
+      this.group.add(car);
+    }
     this.group.add(g);
     // the menu board on the right shoulder, a little box speaker under it
     sp.sample(this.tMenu, P);
     const board = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 2.7), new THREE.MeshBasicMaterial({ map: menuTexture(), toneMapped: false }));
-    board.position.set(P.x + P.nx * 5.4, P.y + 2.2, P.z + P.nz * 5.4);
-    board.rotation.y = -P.heading - Math.PI / 2;
+    // on the driver's side, at window height, angled so you read it as you pull up
+    board.position.set(P.x - P.nx * 4.6, P.y + 1.9, P.z - P.nz * 4.6);
+    board.rotation.y = -P.heading + Math.PI / 2 - 0.35;
     this.group.add(board);
     this.boardLight = new THREE.PointLight(0xffc070, 5, 10, 1.6);
-    this.boardLight.position.copy(board.position).add(new THREE.Vector3(-P.nx, 0.5, -P.nz));
+    this.boardLight.position.copy(board.position).add(new THREE.Vector3(P.nx, 0.5, P.nz));
     this.group.add(this.boardLight);
     const spk = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.7, 0.3), new THREE.MeshStandardMaterial({ color: 0x1a1a1c, roughness: 0.6 }));
-    spk.position.set(P.x + P.nx * 4.9, P.y + 0.9, P.z + P.nz * 4.9);
+    spk.position.set(P.x - P.nx * 4.3, P.y + 1.1, P.z - P.nz * 4.3);
     spk.rotation.y = -P.heading;
     this.group.add(spk);
   }
@@ -138,7 +158,12 @@ export class DriveThru extends SidePlace {
     this.signMat.color.setScalar(Math.sin(time * 19) > 0.8 && Math.sin(time * 1.3) > 0.3 ? 0.25 : 1.1);
     this.boardLight.intensity = 5 * (Math.sin(time * 41) > 0.9 ? 0.3 : 1);
     if (!h) { this.state = 'drive'; this.bag.visible = true; return out; }
-    if (this.state === 'drive' && Math.abs(h.t - this.tMenu) < 6 && vehicle.speed < 4) { this.state = 'ordered'; out.speak = true; }
+    if (this.state === 'drive' && Math.abs(h.t - this.tMenu) < 6 && vehicle.speed < 4) {
+      // it takes your order twice, then the third time there's only static, then twice again…
+      this.visits = (this.visits || 0) + 1;
+      if (this.visits % 3 === 0) { this.state = 'static'; out.static = true; }
+      else { this.state = 'ordered'; out.speak = true; }
+    }
     if (this.state === 'ordered' && Math.abs(h.t - this.tWindow) < 5 && vehicle.speed < 5) { this.state = 'served'; this.bag.visible = false; out.served = true; }
     // a nudge: slow down for the board
     if (this.state === 'drive' && h.t > this.tMenu - 30 && h.t < this.tMenu) out.slow = true;

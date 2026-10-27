@@ -27,13 +27,16 @@ export class Audio {
     this.verbIn.gain.value = 0.5;
     this.verbIn.connect(this.verb).connect(this.master);
 
+    // the world's sounds (weather, air, places, music) run through their own bus, so M can quiet them alone
+    this.amb = this.gain(1);
+    this.amb.connect(this.master);
     this.noise = this.noiseBuffer(3);
     this.buildRain();
     this.buildEngine();
     this.buildDrone();
     this.buildLoops();
     this.trainGain = this.gain(0);
-    this.loopNoise().connect(this.filter('lowpass', 90, 1.2)).connect(this.trainGain).connect(this.master);
+    this.loopNoise().connect(this.filter('lowpass', 90, 1.2)).connect(this.trainGain).connect(this.amb);
     this.nextClack = 0;
     this.clackBeat = 0;
   }
@@ -80,13 +83,13 @@ export class Audio {
 
   buildRain() {
     this.rainGain = this.gain(0.07);
-    this.loopNoise().connect(this.filter('highpass', 900)).connect(this.filter('lowpass', 6000)).connect(this.rainGain).connect(this.master);
+    this.loopNoise().connect(this.filter('highpass', 900)).connect(this.filter('lowpass', 6000)).connect(this.rainGain).connect(this.amb);
     this.rumble = this.gain(0.03);
-    this.loopNoise().connect(this.filter('lowpass', 140)).connect(this.rumble).connect(this.master);
+    this.loopNoise().connect(this.filter('lowpass', 140)).connect(this.rumble).connect(this.amb);
     // wind past the windows rises with speed
     this.wind = this.gain(0);
     this.windFilter = this.filter('bandpass', 500, 0.6);
-    this.loopNoise().connect(this.windFilter).connect(this.wind).connect(this.master);
+    this.loopNoise().connect(this.windFilter).connect(this.wind).connect(this.amb);
     // tires on a wet road: the sound of speed you feel in your teeth
     this.tires = this.gain(0);
     this.tireFilter = this.filter('bandpass', 1400, 0.9);
@@ -108,7 +111,7 @@ export class Audio {
     const src = this.ctx.createBufferSource();
     src.buffer = b;
     src.loop = true;
-    src.connect(this.filter('bandpass', 2200, 0.8)).connect(this.roof).connect(this.master);
+    src.connect(this.filter('bandpass', 2200, 0.8)).connect(this.roof).connect(this.amb);
     src.start();
   }
 
@@ -164,7 +167,7 @@ export class Audio {
     wow.connect(wowAmt);
     for (const d of this.drones) wowAmt.connect(d.o.detune);
     wow.start();
-    lp.connect(this.droneGain).connect(this.master);
+    lp.connect(this.droneGain).connect(this.amb);
     this.droneGain.connect(this.verbIn);
     this.buildRadio();
   }
@@ -178,7 +181,7 @@ export class Audio {
     const curve = new Float32Array(64);
     for (let i = 0; i < 64; i++) curve[i] = Math.round((i / 32 - 1) * 6) / 6;
     crush.curve = curve;
-    band.connect(crush).connect(this.radio).connect(this.master);
+    band.connect(crush).connect(this.radio).connect(this.amb);
     this.loopNoise().connect(this.filter('highpass', 600)).connect(this.gain(0.25)).connect(band);
     const hum = ctx.createOscillator();
     hum.frequency.value = 60;
@@ -233,7 +236,7 @@ export class Audio {
     this.buzz.type = 'square';
     this.buzz.frequency.value = 120;
     this.buzzGain = this.gain(0);
-    this.buzz.connect(this.filter('bandpass', 240, 4)).connect(this.buzzGain).connect(this.master);
+    this.buzz.connect(this.filter('bandpass', 240, 4)).connect(this.buzzGain).connect(this.amb);
     this.buzz.start();
   }
 
@@ -413,14 +416,14 @@ export class Audio {
     const I = intensity;
     if (!this.herdBed) {
       this.herdBed = this.gain(0);
-      this.loopNoise().connect(this.filter('lowpass', 160, 0.8)).connect(this.herdBed).connect(this.master);
+      this.loopNoise().connect(this.filter('lowpass', 160, 0.8)).connect(this.herdBed).connect(this.amb);
       this.herdDust = this.gain(0);
-      this.loopNoise().connect(this.filter('bandpass', 900, 0.5)).connect(this.herdDust).connect(this.master);
+      this.loopNoise().connect(this.filter('bandpass', 900, 0.5)).connect(this.herdDust).connect(this.amb);
       this.herdDrone = [this.ctx.createOscillator(), this.ctx.createOscillator()];
       this.herdDroneGain = this.gain(0);
       const df = this.filter('lowpass', 300, 1.5);
       this.herdDrone.forEach((o, i) => { o.type = 'sawtooth'; o.frequency.value = 36.71 * (i ? 1.5 : 1); o.connect(df); o.start(); });
-      df.connect(this.herdDroneGain).connect(this.master);
+      df.connect(this.herdDroneGain).connect(this.amb);
       this.herdDroneGain.connect(this.verbIn);
       this.nextHoof = 0;
       this.nextCall = t + 3;
@@ -442,7 +445,7 @@ export class Audio {
         o.start();
         return o;
       });
-      this.phiGain.connect(this.master);
+      this.phiGain.connect(this.amb);
       this.phiGain.connect(this.verbIn);
     }
     this.phiGain.gain.setTargetAtTime(w * vortex * 0.035, t, 1.0);
@@ -473,11 +476,11 @@ export class Audio {
     if (!this.movieBed) {
       this.movieBed = this.gain(0);
       this.movieFilter = this.filter('bandpass', 400, 0.9);
-      this.loopNoise().connect(this.movieFilter).connect(this.filter('lowpass', 2400)).connect(this.movieBed).connect(this.master);
+      this.loopNoise().connect(this.movieFilter).connect(this.filter('lowpass', 2400)).connect(this.movieBed).connect(this.amb);
       this.movieEng = this.ctx.createOscillator();
       this.movieEng.type = 'sawtooth';
       this.movieEngGain = this.gain(0);
-      this.movieEng.connect(this.filter('lowpass', 500, 2)).connect(this.movieEngGain).connect(this.master);
+      this.movieEng.connect(this.filter('lowpass', 500, 2)).connect(this.movieEngGain).connect(this.amb);
       this.movieEng.start();
       this.movieHit = 0;
     }
@@ -586,7 +589,7 @@ export class Audio {
     const t = this.ctx.currentTime;
     if (!this.hailGain) {
       this.hailGain = this.gain(0);
-      this.loopNoise().connect(this.filter('highpass', 2500)).connect(this.filter('peaking', 5200, 2)).connect(this.hailGain).connect(this.master);
+      this.loopNoise().connect(this.filter('highpass', 2500)).connect(this.filter('peaking', 5200, 2)).connect(this.hailGain).connect(this.amb);
       this.nextStone = 0;
     }
     this.hailGain.gain.setTargetAtTime(level * 0.05, t, 0.4);
@@ -603,7 +606,7 @@ export class Audio {
     const t = this.ctx.currentTime;
     if (!this.caveBed) {
       this.caveBed = this.gain(0);
-      this.loopNoise().connect(this.filter('lowpass', 220, 0.5)).connect(this.filter('peaking', 68, 6)).connect(this.caveBed).connect(this.master);
+      this.loopNoise().connect(this.filter('lowpass', 220, 0.5)).connect(this.filter('peaking', 68, 6)).connect(this.caveBed).connect(this.amb);
       this.caveSend = this.gain(0);
       this.caveBed.connect(this.caveSend).connect(this.verbIn);
       this.nextDrip = 0;
@@ -766,7 +769,7 @@ export class Audio {
   buildChoir() {
     const ctx = this.ctx;
     this.choirBus = this.gain(0);
-    this.choirBus.connect(this.master);
+    this.choirBus.connect(this.amb);
     this.choirBus.connect(this.gain(1.3)).connect(this.verbIn);
     this.voices = [];
     for (let v = 0; v < 5; v++) {
@@ -849,9 +852,14 @@ export class Audio {
     if (this.choirBus) this.choirBus.gain.setValueAtTime(0, t);
   }
 
+  /** M: first the world goes quiet and only the car is left; again, and everything is silent; again, all back. */
   toggleMute() {
     if (!this.ctx) return;
-    this.muted = !this.muted;
-    this.master.gain.setTargetAtTime(this.muted ? 0 : 0.9, this.ctx.currentTime, 0.1);
+    this.muteStage = ((this.muteStage || 0) + 1) % 3;
+    const t = this.ctx.currentTime;
+    this.amb.gain.setTargetAtTime(this.muteStage === 0 ? 1 : 0, t, 0.15);
+    this.master.gain.setTargetAtTime(this.muteStage === 2 ? 0 : 0.9, t, 0.15);
+    this.muted = this.muteStage === 2;
   }
+
 }

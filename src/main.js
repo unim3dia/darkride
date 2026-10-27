@@ -37,6 +37,7 @@ import { Audio } from './core/audio.js';
 import { readInput } from './core/input.js';
 import { setupFullscreenButton } from './ui/fullscreen.js';
 import { drawMap } from './ui/mapView.js';
+import { neonTexture } from './world/neon.js';
 import { setupTouch, mergeTouch } from './ui/touch.js';
 
 setupFullscreenButton();
@@ -45,6 +46,17 @@ const TOUCH = setupTouch();
 const PHYS_STEP = 1 / 120;
 
 const { renderer, scene, camera, composer, post, trails, bloom } = createRenderer(document.getElementById('stage'));
+
+// highway signs live on their own: always lit, flickering a little, never tied to a town that unloads
+const ROAD_SIGNS = [];
+function roadSign(top, bottom, pos, yaw, colors) {
+  const mat = new THREE.MeshBasicMaterial({ map: neonTexture(top, bottom, colors), color: new THREE.Color(1.6, 1.6, 1.6), transparent: true, depthWrite: false, fog: false });
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(5.2, 2.6), mat);
+  m.position.copy(pos);
+  m.rotation.y = yaw;
+  scene.add(m);
+  ROAD_SIGNS.push({ mat, seed: Math.random() * 10 });
+}
 const sky = createSky(scene);
 const rain = createRain(scene);
 const audio = new Audio();
@@ -223,6 +235,7 @@ function sidesFrame(dt) {
   const dr = drive.update(dt, state.time, vehicle);
   if (dr.speak) { audio.drivethru(); screens.showCard('…welcome to burger night…', 'may i take your… order'); }
   if (dr.served) screens.showCard('thank you', 'please drive… forward');
+  if (dr.static) { audio.burst('bandpass', 2500, 0.12, 2.5, 0.6, 0.3); screens.showCard('…', 'only static'); }
   // the mud
   const mo = mud.update(dt, state.time, vehicle, rig.name);
   mo.splats.forEach((sp, i) => post.uSplat.value[i].set(sp.x, sp.y, sp.r, sp.a));
@@ -409,7 +422,7 @@ vehicle.spurs.push(race.track);
 for (const dist of [600, 300, 120]) {
   const A = sample(race.track.sA - dist);
   const v = new THREE.Vector3(A.x - A.nx * (ROAD.HALF_WIDTH + 4), A.y + 5.4, A.z - A.nz * (ROAD.HALF_WIDTH + 4));
-  district.signAt('THE CIRCUIT', `${dist} m · ← one lap`, v, Math.atan2(-A.tx, -A.tz), [0xe8f0ff, 0x7fd8ff]);
+  roadSign('THE CIRCUIT', `${dist} m · ← one lap`, v, Math.atan2(-A.tx, -A.tz), [0xe8f0ff, 0x7fd8ff]);
 }
 const atmos = new Atmos(scene);
 const stampede = new Stampede(scene);
@@ -436,7 +449,7 @@ raceRef = { near: (x, z) => { const b = race.track.box; if (x < b.minX - 150 || 
 for (const dist of [400, 200]) {
   const A = sample(hood.spur.sA - dist);
   const v = new THREE.Vector3(A.x - A.nx * (ROAD.HALF_WIDTH + 4), A.y + 5.4, A.z - A.nz * (ROAD.HALF_WIDTH + 4));
-  district.signAt('THE BLOCK', `${dist} m · ← one shot`, v, Math.atan2(-A.tx, -A.tz), [0xffa860, 0xe8d2a8]);
+  roadSign('THE BLOCK', `${dist} m · ← one shot`, v, Math.atan2(-A.tx, -A.tz), [0xffa860, 0xe8d2a8]);
 }
 // the new places: rest stop + car wash, the drive-thru, the mud flats, the jumps
 const wash = new CarWash(scene);
@@ -452,13 +465,13 @@ for (const [pl, title, sub] of SIDE_SIGNS) {
     const A = sample(pl.spur.sA - dist);
     const side = pl.def.side;
     const v = new THREE.Vector3(A.x + A.nx * side * (ROAD.HALF_WIDTH + 4), A.y + 5.4, A.z + A.nz * side * (ROAD.HALF_WIDTH + 4));
-    district.signAt(title, `${dist} m · ${sub}`, v, Math.atan2(-A.tx, -A.tz), [0xffe0b0, 0xffa060]);
+    roadSign(title, `${dist} m · ${sub}`, v, Math.atan2(-A.tx, -A.tz), [0xffe0b0, 0xffa060]);
   }
 }
 const SIDE_PALETTES = new Map([
   [wash, { fog: 0x1c1d20, skyTop: 0x050506, skyHorizon: 0x24262a, glow: 0x30343a, light: 0.2, exposure: 0.95, fogMul: 1.0, grain: 1.3, rain: 0.2 }],
   [drive, { fog: 0x1e1612, skyTop: 0x060404, skyHorizon: 0x2c1e16, glow: 0x3a2618, light: 0.14, exposure: 0.92, fogMul: 1.1, grain: 1.4, rain: 0.3 }],
-  [mud, { fog: 0x3a2c1e, skyTop: 0x120c08, skyHorizon: 0x4a3626, glow: 0x5c4430, light: 0.3, exposure: 1.0, fogMul: 1.2, grain: 1.6, rain: 0.6 }],
+  [mud, { fog: 0x1a1410, skyTop: 0x030202, skyHorizon: 0x22190f, glow: 0x30241a, light: 0.22, exposure: 0.95, fogMul: 1.0, grain: 1.5, rain: 0.45 }],
   [jumps, { fog: 0x0a1220, skyTop: 0x02040a, skyHorizon: 0x14243c, glow: 0x2a4a7a, light: 0.3, exposure: 1.0, fogMul: 0.7, grain: 1.4, rain: 0 }],
 ]);
 // almost no light: the street lives on its windows
@@ -468,7 +481,7 @@ const HOOD_PALETTE = { fog: 0x1a1714, skyTop: 0x050506, skyHorizon: 0x221d18, gl
   for (const dist of [600, 300, 120]) {
     const A = sample(STAMPEDE.a - dist);
     const v = new THREE.Vector3(A.x + A.nx * (ROAD.HALF_WIDTH + 4), A.y + 5.4, A.z + A.nz * (ROAD.HALF_WIDTH + 4));
-    district.signAt('THE CHARGE', `${dist} m · keep right`, v, Math.atan2(-A.tx, -A.tz), [0xbfe2ff, 0x7fa8d8]);
+    roadSign('THE CHARGE', `${dist} m · keep right`, v, Math.atan2(-A.tx, -A.tz), [0xbfe2ff, 0x7fa8d8]);
   }
 }
 // the herd's air: cold blue fog the animals come apart in
@@ -872,6 +885,7 @@ function tick(now) {
   state.aberration *= Math.exp(-raw * 4);
   post.uAberration.value = state.aberration + (vehicle.airborne ? 0.08 : 0);
   post.uTime.value = state.time;
+  for (const sg of ROAD_SIGNS) sg.mat.color.setScalar(Math.sin(state.time * 23 + sg.seed) > -0.9 ? 1.6 : 0.6);
   // the place's own weather: a lid of fog, banks at the lens, hail
   const sky = state.mode === 'ride' && !vehicle.spurHit ? atmos.update(raw, state.time, vehicle.s, camera) : atmos.update(raw, state.time, null, camera);
   post.uTopFog.value = sky.top;

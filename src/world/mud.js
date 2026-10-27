@@ -15,19 +15,19 @@ function mudTexture() {
   c.width = 256;
   c.height = 512;
   const g = c.getContext('2d');
-  g.fillStyle = '#2a1d12';
+  // near-black, wet: brown only where it's thick, the rest a sheet of water holding the dark sky
+  g.fillStyle = '#0b0806';
   g.fillRect(0, 0, 256, 512);
-  for (let i = 0; i < 260; i++) {
-    const x = Math.random() * 256, y = Math.random() * 512, r = 4 + Math.random() * 30;
+  for (let i = 0; i < 220; i++) {
+    const x = Math.random() * 256, y = Math.random() * 512, r = 6 + Math.random() * 40;
     const gr = g.createRadialGradient(x, y, 0, x, y, r);
-    const wet = Math.random() < 0.3;
-    gr.addColorStop(0, wet ? 'rgba(70,58,44,0.8)' : `rgba(${20 + Math.random() * 30},${12 + Math.random() * 18},${6 + Math.random() * 10},0.7)`);
+    gr.addColorStop(0, `rgba(${30 + Math.random() * 22},${18 + Math.random() * 12},${8 + Math.random() * 6},${0.25 + Math.random() * 0.35})`);
     gr.addColorStop(1, 'rgba(0,0,0,0)');
     g.fillStyle = gr;
     g.fillRect(x - r, y - r, r * 2, r * 2);
   }
   // ruts: two dark grooves where everyone's tyres went
-  g.fillStyle = 'rgba(10,6,3,0.5)';
+  g.fillStyle = 'rgba(2,1,1,0.55)';
   for (const x of [82, 174]) g.fillRect(x - 10, 0, 20, 512);
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
@@ -70,7 +70,7 @@ export class Mud extends SidePlace {
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     geo.computeVertexNormals();
-    this.group.add(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.35, metalness: 0.05, envMapIntensity: 0.6 })));
+    this.group.add(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.12, metalness: 0.15, envMapIntensity: 1.6 })));
     // berms either side, dark and heaped
     for (const s of [-1, 1]) this.group.add(new THREE.Mesh(spurRibbon(sp, this.tM0, this.tM1, s * (this.half + 5), s * (this.half + 14), 1.6, -2, 6), new THREE.MeshStandardMaterial({ color: 0x1a120b, roughness: 1 })));
     this.buildClods();
@@ -78,8 +78,15 @@ export class Mud extends SidePlace {
   }
 
   buildClods() {
-    const geo = new THREE.DodecahedronGeometry(0.16, 0);
-    this.clodMesh = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ color: 0x5a3e24, roughness: 0.5, emissive: 0x120a04 }), CLODS);
+    // a lump, not a gem: a sphere pushed in and out
+    const geo = new THREE.IcosahedronGeometry(0.16, 1);
+    const gp = geo.attributes.position;
+    for (let i = 0; i < gp.count; i++) {
+      const k = 0.7 + 0.5 * Math.abs(Math.sin(gp.getX(i) * 31 + gp.getY(i) * 17) * Math.cos(gp.getZ(i) * 23));
+      gp.setXYZ(i, gp.getX(i) * k, gp.getY(i) * k, gp.getZ(i) * k);
+    }
+    geo.computeVertexNormals();
+    this.clodMesh = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ color: 0x2a1b10, roughness: 0.2, metalness: 0.1, envMapIntensity: 1.2 }), CLODS);
     this.clodMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.clodMesh.frustumCulled = false;
     this.group.add(this.clodMesh);
@@ -111,7 +118,8 @@ export class Mud extends SidePlace {
       this.cv[i * 3 + 1] = 3 + Math.random() * (6 + sp * 0.25);
       this.cv[i * 3 + 2] = f.z * back + r.z * out;
       this.cl[i] = 1.2 + Math.random() * 1.4;
-      this.cs[i] = 0.4 + Math.random() * 1.0;
+      // mostly spatter and drops, now and then a fat clump
+      this.cs[i] = 0.25 + Math.pow(Math.random(), 3) * 2.6;
     }
   }
 
@@ -124,7 +132,11 @@ export class Mud extends SidePlace {
       // the mud drags at you a little and squirms the tail
       vehicle.vel.multiplyScalar(Math.exp(-dt * 0.12));
       vehicle.yaw += Math.sin(time * 3.1) * 0.0025 * Math.min(1, vehicle.speed / 15);
-      const rate = Math.min(1, vehicle.speed / 22) * 260;
+      // it comes in waves, like the wheels digging and catching: a slow swell with a beat on top
+      this.beat = (this.beat || 0) + dt * (0.9 + vehicle.speed * 0.05);
+      const pulse = Math.pow(Math.max(0, Math.sin(this.beat * Math.PI * 2)), 3) * (0.6 + 0.4 * Math.sin(time * 0.37));
+      const swell = 0.5 + 0.5 * Math.sin(time * 0.53 + Math.sin(time * 0.21) * 2);
+      const rate = Math.min(1, vehicle.speed / 22) * (40 + 520 * pulse * swell);
       this.fling(vehicle, Math.floor(rate * dt + Math.random()));
       // now and then one lands on the lens
       if (vehicle.speed > 9 && Math.random() < dt * (cameraView === 'cabin' ? 0.5 : 0.9)) {
@@ -150,7 +162,7 @@ export class Mud extends SidePlace {
       this.cv[i * 3 + 1] -= 22 * dt;
       for (let c = 0; c < 3; c++) this.cp[i * 3 + c] += this.cv[i * 3 + c] * dt;
       v.set(this.cp[i * 3], this.cp[i * 3 + 1], this.cp[i * 3 + 2]);
-      this.clodMesh.setMatrixAt(i, m.compose(v, q.set(i * 0.1, i * 0.3, 0, 1).normalize(), sc.setScalar(this.cs[i])));
+      this.clodMesh.setMatrixAt(i, m.compose(v, q.set(i * 0.1, i * 0.3, 0, 1).normalize(), sc.set(this.cs[i] * 0.8, this.cs[i] * 0.6, this.cs[i] * (1 + Math.min(1.4, Math.hypot(this.cv[i * 3], this.cv[i * 3 + 2]) * 0.06)))));
     }
     if (live) this.clodMesh.instanceMatrix.needsUpdate = true;
     return out;
