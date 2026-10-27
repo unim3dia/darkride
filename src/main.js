@@ -50,8 +50,8 @@ const { renderer, scene, camera, composer, post, trails, bloom } = createRendere
 // highway signs live on their own: always lit, flickering a little, never tied to a town that unloads
 const ROAD_SIGNS = [];
 function roadSign(top, bottom, pos, yaw, colors) {
-  const mat = new THREE.MeshBasicMaterial({ map: neonTexture(top, bottom, colors), color: new THREE.Color(1.6, 1.6, 1.6), transparent: true, depthWrite: false, fog: false });
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(5.2, 2.6), mat);
+  const mat = new THREE.MeshBasicMaterial({ map: neonTexture(top, bottom, colors), color: new THREE.Color(0.95, 0.95, 0.95), transparent: true, depthWrite: false, fog: false });
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(8.4, 4.2), mat);
   m.position.copy(pos);
   m.rotation.y = yaw;
   scene.add(m);
@@ -138,6 +138,8 @@ function warpSpots() {
 }
 let WARPS = null;
 let lastWarp = -1;
+let warpDeck = [];
+const HERD_GREY = new THREE.Color();
 
 const raceShot = (camera, v, dt) => { if (!race.shot(camera, v, dt)) rig.cine = null; };
 
@@ -284,8 +286,12 @@ function landWarp() {
   const want = (state.warping.name || '').toLowerCase();
   let i = want ? WARPS.findIndex((w) => w.name.toLowerCase().includes(want)) : -1;
   if (i < 0) {
-    i = Math.floor(Math.random() * WARPS.length);
-    if (i === lastWarp) i = (i + 1 + Math.floor(Math.random() * (WARPS.length - 1))) % WARPS.length;
+    // a shuffled deck: every place once before any comes round again
+    if (!warpDeck.length) {
+      warpDeck = WARPS.map((_, k) => k).filter((k) => k !== lastWarp && WARPS[k].name !== 'stampede');
+      for (let k = warpDeck.length - 1; k > 0; k--) { const j = Math.floor(Math.random() * (k + 1)); [warpDeck[k], warpDeck[j]] = [warpDeck[j], warpDeck[k]]; }
+    }
+    i = warpDeck.pop();
   }
   lastWarp = i;
   WARPS[i].go();
@@ -419,10 +425,10 @@ const movie = new DriveInMovie(district, district.driveIn.booth);
 // just past the Narrows, a left-hand exit: the road becomes the circuit, one long lap, and comes back
 const race = new Race(scene, rng(5150));
 vehicle.spurs.push(race.track);
-for (const dist of [600, 300, 120]) {
+for (const dist of [1200, 900, 600, 300, 120]) {
   const A = sample(race.track.sA - dist);
-  const v = new THREE.Vector3(A.x - A.nx * (ROAD.HALF_WIDTH + 4), A.y + 5.4, A.z - A.nz * (ROAD.HALF_WIDTH + 4));
-  roadSign('THE CIRCUIT', `${dist} m · ← one lap`, v, Math.atan2(-A.tx, -A.tz), [0xe8f0ff, 0x7fd8ff]);
+  const v = new THREE.Vector3(A.x - A.nx * (ROAD.HALF_WIDTH + 4), A.y + 6.4, A.z - A.nz * (ROAD.HALF_WIDTH + 4));
+  roadSign('THE RACE', `${dist} m · ← exit left`, v, Math.atan2(-A.tx, -A.tz), [0xe8f0ff, 0x7fd8ff]);
 }
 const atmos = new Atmos(scene);
 const stampede = new Stampede(scene);
@@ -448,7 +454,7 @@ hoodRef = hood;
 raceRef = { near: (x, z) => { const b = race.track.box; if (x < b.minX - 150 || x > b.maxX + 150 || z < b.minZ - 150 || z > b.maxZ + 150) return false; return race.track.distance(x, z) < 120; } };
 for (const dist of [400, 200]) {
   const A = sample(hood.spur.sA - dist);
-  const v = new THREE.Vector3(A.x - A.nx * (ROAD.HALF_WIDTH + 4), A.y + 5.4, A.z - A.nz * (ROAD.HALF_WIDTH + 4));
+  const v = new THREE.Vector3(A.x - A.nx * (ROAD.HALF_WIDTH + 4), A.y + 6.4, A.z - A.nz * (ROAD.HALF_WIDTH + 4));
   roadSign('THE BLOCK', `${dist} m · ← one shot`, v, Math.atan2(-A.tx, -A.tz), [0xffa860, 0xe8d2a8]);
 }
 // the new places: rest stop + car wash, the drive-thru, the mud flats, the jumps
@@ -464,7 +470,7 @@ for (const [pl, title, sub] of SIDE_SIGNS) {
   for (const dist of [400, 200]) {
     const A = sample(pl.spur.sA - dist);
     const side = pl.def.side;
-    const v = new THREE.Vector3(A.x + A.nx * side * (ROAD.HALF_WIDTH + 4), A.y + 5.4, A.z + A.nz * side * (ROAD.HALF_WIDTH + 4));
+    const v = new THREE.Vector3(A.x + A.nx * side * (ROAD.HALF_WIDTH + 4), A.y + 6.4, A.z + A.nz * side * (ROAD.HALF_WIDTH + 4));
     roadSign(title, `${dist} m · ${sub}`, v, Math.atan2(-A.tx, -A.tz), [0xffe0b0, 0xffa060]);
   }
 }
@@ -480,7 +486,7 @@ const HOOD_PALETTE = { fog: 0x1a1714, skyTop: 0x050506, skyHorizon: 0x221d18, gl
   // the way in looks like any other exit: signs counting down, the right lane peeling off
   for (const dist of [600, 300, 120]) {
     const A = sample(STAMPEDE.a - dist);
-    const v = new THREE.Vector3(A.x + A.nx * (ROAD.HALF_WIDTH + 4), A.y + 5.4, A.z + A.nz * (ROAD.HALF_WIDTH + 4));
+    const v = new THREE.Vector3(A.x + A.nx * (ROAD.HALF_WIDTH + 4), A.y + 6.4, A.z + A.nz * (ROAD.HALF_WIDTH + 4));
     roadSign('THE CHARGE', `${dist} m · keep right`, v, Math.atan2(-A.tx, -A.tz), [0xbfe2ff, 0x7fa8d8]);
   }
 }
@@ -757,7 +763,7 @@ function tick(now) {
   if (state.mode === 'title' && input.any) startRide();
   if (input.mute) audio.toggleMute();
   if (input.view && state.mode === 'ride') rig.cycle();
-  if (input.warp && state.mode === 'ride') warp();
+  if (input.warp && state.mode === 'ride') warp(typeof input.warp === 'string' ? input.warp : undefined);
   if (state.warping && (state.warping.t += raw) > 0.45) landWarp();
 
   const rr = state.mode === 'ride' ? raceFrame(dt) : {};
@@ -788,6 +794,7 @@ function tick(now) {
   const onHerd = vehicle.spurHit && vehicle.spurHit.spur === herdRoad ? vehicle.spurHit : null;
   const herd = stampede.update(dt, state.time, vehicle, herdRoad);
   rig.herd = herd.w;
+  state.herdFog = herd.whiteout || 0;
   if (herd.w > 0.01 && !ambient.pocket) ambient.pocket = { weight: Math.min(1, herd.w * 1.2), palette: DUST_PALETTE };
   // the bridge is a strip: lean on its edge and the dark leans back
   const edge = onHerd ? herdHalfWidth(herdRoad.sample(onHerd.t).u) - 1.2 : 0;
@@ -889,8 +896,19 @@ function tick(now) {
   // the place's own weather: a lid of fog, banks at the lens, hail
   const sky = state.mode === 'ride' && !vehicle.spurHit ? atmos.update(raw, state.time, vehicle.s, camera) : atmos.update(raw, state.time, null, camera);
   post.uTopFog.value = sky.top;
-  post.uGust.value = sky.gust;
+  post.uGust.value = Math.max(sky.gust, (state.herdFog || 0) * 0.97);
+  // the Charge's held breath: the fog closes right in around the car
+  if (state.herdFog > 0.01) {
+    if (scene.fog.isFogExp2) scene.fog.density *= 1 + state.herdFog * 9;
+    else { scene.fog.near *= 1 - state.herdFog * 0.95; scene.fog.far = THREE.MathUtils.lerp(scene.fog.far, 14, state.herdFog); }
+  }
   post.uGustCol.value.copy(scene.fog.color).lerp(new THREE.Color(0.75, 0.77, 0.8), 0.5);
+  if (state.herdFog > 0.01) {
+    // banks of darker grey rolling through it, charcoal to ash
+    const g = 0.12 + 0.3 * (0.5 + 0.5 * Math.sin(state.time * 0.7) * Math.sin(state.time * 0.23 + 1.3));
+    post.uGustCol.value.lerp(HERD_GREY.setRGB(g, g * 1.02, g * 1.05), state.herdFog);
+    scene.fog.color.lerp(HERD_GREY, state.herdFog * 0.8);
+  }
   scene.fog.density *= 1 + sky.gust * 1.5 + sky.hail * 0.4;
   audio.hail(sky.hail);
   post.uGrain.value = 0.085 * ambient.grain + (vehicle.airborne ? 0.03 : 0);

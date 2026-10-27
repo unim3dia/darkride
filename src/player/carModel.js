@@ -151,8 +151,7 @@ function bodyParts({ wheel: withWheel = true } = {}) {
     P.chrome.push(box(0.03, 0.03, 0.16, sx * 1.01, 0.9, -0.15), box(0.03, 0.03, 0.16, sx * 1.01, 0.9, 0.95));
     P.chrome.push(strut([sx * 0.96, 1.0, -1.02], [sx * 1.08, 1.1, -1.0], 0.015, 5));
     // the driver's mirror is the big round-shouldered one you see from the seat
-    if (sx < 0) P.chrome.push(rbox(0.31, 0.2, 0.07, sx * 1.15, 1.22, -1.02, 0.03)); // the driver's mirror housing; its glass is a live reflection (carView)
-    else P.chrome.push(rbox(0.06, 0.09, 0.14, sx * 1.1, 1.12, -1.0, 0.02));
+    if (sx > 0) P.chrome.push(rbox(0.06, 0.09, 0.14, sx * 1.1, 1.12, -1.0, 0.02));
   }
 
   // ---- the details that make it a '70s land yacht and not a box

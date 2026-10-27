@@ -505,6 +505,9 @@ export class Stampede {
     this.score = sc;
     out.intensity = I;
     out.score = sc;
+    // one held breath before the crescendo: the world goes almost entirely to fog, then they burst out of it
+    const fz = Math.abs(u - 0.58) / 0.05;
+    out.whiteout = fz < 1 ? Math.pow(Math.cos(fz * Math.PI / 2), 0.6) * this.w : 0;
     if (this.trees) for (const tr of this.trees) tr.g.visible = Math.abs(tr.u - ur) < 0.12 && ((tr.u * 97) % 1) < sc.trees;
     const C = road.sample(this.t || 0);
     const along = vehicle.vel.x * C.tx + vehicle.vel.z * C.tz;

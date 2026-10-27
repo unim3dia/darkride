@@ -45,15 +45,24 @@ export class CarView {
     this.glassMeshes = [];
     this.model.root.traverse((o) => { if (o.isMesh && o.material && o.material.color && o.material.color.getHex() === 0x05070a && o.material.transparent) { this.glassOut = o.material; this.glassMeshes.push(o); } });
     this.inside = false;
-    // the driver's side mirror: real glass, showing what's behind and beside the car
-    this.mirror = new Reflector(new THREE.PlaneGeometry(0.28, 0.16), { textureWidth: 384, textureHeight: 224, color: 0x9aa3a8, clipBias: 0.003 });
-    this.mirror.position.set(-1.15, 1.22, -0.98);
-    // angled the way a driver sets it: halfway between looking back down the flank and looking at your eye
-    const toEye = new THREE.Vector3(-0.47 + 1.15, 1.26 - 1.22, 0.16 + 0.98).normalize();
+    // the driver's side mirror: a chrome housing with real glass framed inside it,
+    // sat low on the door so from the seat it reads just above the middle of the wheel
+    const mount = new THREE.Group();
+    mount.position.set(-1.13, 1.12, -0.98);
+    const toEye = new THREE.Vector3(-0.47 + 1.13, 1.26 - 1.12, 0.16 + 0.98).normalize();
     const normal = toEye.add(new THREE.Vector3(0, 0, 1)).normalize();
-    this.mirror.lookAt(this.mirror.position.clone().add(normal));
+    mount.lookAt(mount.position.clone().add(normal));
+    const chrome = new THREE.MeshStandardMaterial({ color: 0x1a1c1f, roughness: 0.3, metalness: 0.9, envMapIntensity: 1 });
+    const housing = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 12).scale(0.148, 0.09, 0.05).translate(0, 0, -0.035), chrome);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.012, 6, 28).scale(1.42, 0.86, 1), chrome);
+    this.mirror = new Reflector(new THREE.CircleGeometry(1, 40).scale(0.137, 0.08, 1), { textureWidth: 384, textureHeight: 224, color: 0x9aa3a8, clipBias: 0.003 });
+    this.mirror.position.z = 0.002;
+    // the arm back to the door
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.16, 6).rotateZ(Math.PI / 2).translate(0.15, -0.04, -0.05), chrome);
+    mount.add(housing, rim, this.mirror, arm);
+    this.mirrorMount = mount;
     this.mirror.visible = false;
-    this.model.body.add(this.mirror);
+    this.model.body.add(mount);
 
     // one weak, tired headlight beam; the left bulb is going
     this.beam = new THREE.SpotLight(0xffd9a0, 22, 42, 0.42, 0.7, 1.5);
