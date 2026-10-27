@@ -120,7 +120,19 @@ export class Vehicle {
     const street = this.street.contains(this.pos.x, this.pos.z) ? 0 : -Infinity;
     // a surface counts if you're near it now, or were on/above it a moment ago (no falling through)
     const above = (y) => this.pos.y > y - 2.5 || y0 >= y - 0.4;
-    const deck = onRoadPlan && above(deckY) ? deckY : -Infinity;
+    // a log jam across the deck: the stacked face stops you dead unless you're over it
+    let deckTop = deckY;
+    const logH = this.logJam && onRoadPlan ? this.logJam.height(p.s) : 0;
+    if (logH > 0) {
+      const top = deckY + logH;
+      if (this.logJam.isWall(p.s) && y0 < top - 0.3 && this.pos.y < top - 0.3) {
+        this.pos.x -= this.vel.x * dt * 1.5;
+        this.pos.z -= this.vel.z * dt * 1.5;
+        this.vel.x *= -0.2; this.vel.z *= -0.2;
+        this.hitLogs = true;
+      } else if (y0 >= top - 0.6 || this.pos.y >= top - 0.6) deckTop = top;
+    }
+    const deck = onRoadPlan && above(deckTop) ? deckTop : -Infinity;
     let spurHit = null;
     for (const sp of this.spurs) {
       const h = sp.query(this.pos.x, this.pos.z, this.pos.y);

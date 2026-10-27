@@ -25,6 +25,8 @@ import { CarWash } from './world/carWash.js';
 import { DriveThru } from './world/driveThru.js';
 import { Mud } from './world/mud.js';
 import { Jumps } from './world/jumps.js';
+import { LogJam } from './world/logJam.js';
+import { HERD, RACE, HOOD, WASH, DRIVE, MUD, JUMPS } from './world/track.js';
 import { Stampede, STAMPEDE, buildHerdRoad, herdRoadMesh, herdHalfWidth } from './world/stampede.js';
 import { collidersFrom, updateBodies } from './world/bodies.js';
 import { Vehicle } from './player/vehicle.js';
@@ -130,6 +132,7 @@ function warpSpots() {
   spots.push({ name: 'drive-in', go: () => { const p = district.toWorld(LOT.u1 - 30, LOT.aisleV); vehicle.placeAt(p.x, 0, p.z, -district.yawToward(-1, 0), 4); } });
   for (const [n, pl, u] of [['wash', wash, 0.4], ['drive-thru', drive, 0.38], ['mud', mud, 0.2], ['jumps', jumps, 0.16]]) spots.push({ name: n, go: () => { const p = pl.spur.sample(pl.tAt(u)); vehicle.placeAt(p.x, p.y + 0.4, p.z, p.heading, 18); } });
   spots.push({ name: 'block', go: () => { const p = hood.spur.sample(hood.spur.N * 0.3); vehicle.placeAt(p.x, p.y + 0.4, p.z, p.heading, 16); } });
+  spots.push({ name: 'logs', go: () => vehicle.reset(logJam.s0 - 160, 0, 0, 22) });
   spots.push({ name: 'narrows', go: () => vehicle.reset(narrows.s0, 0, 0, 16) });
   spots.push({ name: 'charge', go: () => { const p = herdRoad.sample(herdRoad.N * 0.2); vehicle.placeAt(p.x, p.y + 0.4, p.z, p.heading, 24); } });
   spots.push({ name: 'stampede', go: () => { const p = herdRoad.sample(herdRoad.N * 0.2); vehicle.placeAt(p.x, p.y + 0.4, p.z, p.heading, 24); } });
@@ -462,6 +465,14 @@ const wash = new CarWash(scene);
 const drive = new DriveThru(scene);
 const mud = new Mud(scene);
 const jumps = new Jumps(scene);
+// across the Pines highway: a spilled load of logs to jump and rattle over
+const logJam = new LogJam(scene, [HERD, RACE, HOOD, WASH, DRIVE, MUD, JUMPS].map((e) => e.sA ?? e.at * LOOP_LEN));
+vehicle.logJam = logJam;
+for (const dist of [400, 200, 80]) {
+  const A = sample(logJam.s0 - dist);
+  const v = new THREE.Vector3(A.x + A.nx * (ROAD.HALF_WIDTH + 4), A.y + 6.4, A.z + A.nz * (ROAD.HALF_WIDTH + 4));
+  roadSign('LOGS ON ROAD', `${dist} m · jump it`, v, Math.atan2(-A.tx, -A.tz), [0xffd27a, 0xd8a868]);
+}
 const sides = [wash, drive, mud, jumps];
 for (const sp of sides) vehicle.spurs.push(sp.spur);
 sidesRef = sides;
@@ -792,6 +803,14 @@ function tick(now) {
   } else audio.choir(pk.pocket ? pk.pocket.choir : null, pk.weight);
   // the stampede: the herd runs with you, and leans on you if you drift into it
   const onHerd = vehicle.spurHit && vehicle.spurHit.spur === herdRoad ? vehicle.spurHit : null;
+  const logs = logJam.update(state.time, vehicle);
+  if (logs.on) {
+    // every wheel rolling over a different log: the whole car rattles
+    rig.shake(0.05 * logs.on);
+    vehicle.yaw += (Math.random() - 0.5) * 0.006 * logs.on;
+    if (Math.random() < dt * 9 * logs.on) audio.bump(0.6 + Math.random() * 1.4);
+  }
+  if (vehicle.hitLogs) { vehicle.hitLogs = false; rig.shake(0.5); audio.bump(5); }
   const herd = stampede.update(dt, state.time, vehicle, herdRoad);
   rig.herd = herd.w;
   state.herdFog = herd.whiteout || 0;
