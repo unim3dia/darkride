@@ -6,7 +6,7 @@ export const isTouch = () =>
   typeof window !== 'undefined' &&
   (window.matchMedia('(hover: none) and (pointer: coarse)').matches || navigator.maxTouchPoints > 1 && /iPad|Macintosh/.test(navigator.userAgent) && 'ontouchend' in document);
 
-export const touchState = { steer: 0, throttle: 0, brake: 0, hopHeld: false, hopPressed: false, view: false, liftFront: false, liftLeft: false, liftRight: false, any: false };
+export const touchState = { steer: 0, throttle: 0, brake: 0, hopHeld: false, hopPressed: false, view: false, liftFront: false, liftLeft: false, liftRight: false, warp: false, any: false };
 
 function el(tag, cls, html = '') {
   const e = document.createElement(tag);
@@ -104,7 +104,10 @@ export function setupTouch() {
   lift.setAttribute('aria-label', 'Lift the nose');
   leanL.setAttribute('aria-label', 'Three-wheel left');
   leanR.setAttribute('aria-label', 'Three-wheel right');
-  right.append(cam, leanL, lift, leanR, hop);
+  const ride = el('button', 't-mini t-ride', 'RIDE');
+  ride.setAttribute('aria-label', 'Warp somewhere at random');
+  right.append(ride, cam, leanL, lift, leanR, hop);
+  hold(ride, () => { touchState.warp = true; }, () => {});
   hold(hop, () => { touchState.hopHeld = true; touchState.hopPressed = true; touchState.any = true; }, () => { touchState.hopHeld = false; });
   hold(lift, () => { touchState.liftFront = true; }, () => { touchState.liftFront = false; });
   hold(leanL, () => { touchState.liftLeft = true; }, () => { touchState.liftLeft = false; });
@@ -132,10 +135,12 @@ export function mergeTouch(input) {
     liftFront: input.liftFront || t.liftFront,
     liftLeft: input.liftLeft || t.liftLeft,
     liftRight: input.liftRight || t.liftRight,
+    warp: input.warp || t.warp,
     any: input.any || t.any,
   };
   t.hopPressed = false;
   t.view = false;
+  t.warp = false;
   t.any = false;
   return out;
 }
