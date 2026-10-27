@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { buildPlayerCar, buildRider, WHEEL_RADIUS } from './carModel.js';
 import { buildBeam, buildTailGlow, buildWipers, stainTexture } from './carLights.js';
+import { Reflector } from 'three/addons/objects/Reflector.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -44,6 +45,15 @@ export class CarView {
     this.glassMeshes = [];
     this.model.root.traverse((o) => { if (o.isMesh && o.material && o.material.color && o.material.color.getHex() === 0x05070a && o.material.transparent) { this.glassOut = o.material; this.glassMeshes.push(o); } });
     this.inside = false;
+    // the driver's side mirror: real glass, showing what's behind and beside the car
+    this.mirror = new Reflector(new THREE.PlaneGeometry(0.28, 0.16), { textureWidth: 384, textureHeight: 224, color: 0x9aa3a8, clipBias: 0.003 });
+    this.mirror.position.set(-1.15, 1.22, -0.98);
+    // angled the way a driver sets it: halfway between looking back down the flank and looking at your eye
+    const toEye = new THREE.Vector3(-0.47 + 1.15, 1.26 - 1.22, 0.16 + 0.98).normalize();
+    const normal = toEye.add(new THREE.Vector3(0, 0, 1)).normalize();
+    this.mirror.lookAt(this.mirror.position.clone().add(normal));
+    this.mirror.visible = false;
+    this.model.body.add(this.mirror);
 
     // one weak, tired headlight beam; the left bulb is going
     this.beam = new THREE.SpotLight(0xffd9a0, 22, 42, 0.42, 0.7, 1.5);
@@ -142,6 +152,7 @@ export class CarView {
   sync(v, time, dt) {
     const m = this.model;
     for (const g of this.glassMeshes) g.material = this.inside ? this.glassIn : this.glassOut;
+    this.mirror.visible = this.inside; // only rendered from the driver's seat
     m.root.position.copy(v.pos);
     m.root.position.y = v.rideY ?? v.pos.y;
     m.root.rotation.set(v.airPitch + (v.groundPitch || 0), -v.yaw, v.airRoll);

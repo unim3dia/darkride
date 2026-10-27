@@ -486,7 +486,15 @@ export class District {
         const w0 = this.toWorld(p.u, p.v, 0);
         const L = this.toLocal(w0.x + fx * 4.2, w0.z + fz * 4.2);
         const F = this.toLocal(w0.x + fx * 10, w0.z + fz * 10);
-        if (this.r() < 0.5) this.watcherSpots.push({ u: L.u, v: L.v, y: 0, faceU: F.u - L.u, faceV: F.v - L.v, bystander: true });
+        if (this.r() < 0.5) {
+          this.watcherSpots.push({ u: L.u, v: L.v, y: 0, faceU: F.u - L.u, faceV: F.v - L.v, bystander: true });
+          // sometimes a pair, side by side
+          if (this.r() < 0.45) {
+            const rx = -fz, rz = fx;
+            const L2 = this.toLocal(w0.x + fx * 4.2 + rx * 1.3, w0.z + fz * 4.2 + rz * 1.3);
+            this.watcherSpots.push({ u: L2.u, v: L2.v, y: 0, faceU: F.u - L.u, faceV: F.v - L.v, bystander: true });
+          }
+        }
         else {
         const B = this.toLocal(w0.x - fx * 4.4, w0.z - fz * 4.4);
         const BF = this.toLocal(w0.x - fx * 10, w0.z - fz * 10);
