@@ -246,11 +246,12 @@ export class Vehicle {
     const climb = this.pos.y - (this.prevY ?? this.pos.y);
     const jump = climb - (this.prevClimb || 0);
     this.prevY = this.pos.y;
-    this.prevClimb = Math.abs(jump) > 0.06 ? this.prevClimb || 0 : climb;
+    // a step is a one-frame event: the next frame compares against level ground again
+    this.prevClimb = this.airborne || Math.abs(jump) > 0.06 ? 0 : climb;
     const grounded = !this.airborne && !this.wasAirborne;
     this.wasAirborne = this.airborne;
     if (grounded && Math.abs(jump) > 0.06 && Math.abs(jump) < 1.2) this.rideOff = (this.rideOff || 0) - jump;
-    this.rideOff = (this.rideOff || 0) * Math.exp(-dt * 12);
+    this.rideOff = THREE.MathUtils.clamp((this.rideOff || 0) * Math.exp(-dt * 12), -1.2, 1.2);
     this.rideY = this.pos.y + this.rideOff;
   }
 

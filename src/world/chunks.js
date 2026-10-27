@@ -237,9 +237,12 @@ export class ChunkManager {
       chunk.bodies.push(makeBody(car, w.s));
       // someone always stands between you and a car in the road, eyes lit, so you see it coming
       chunk.sentinels = chunk.sentinels || [];
-      chunk.sentinels.push({ pos: roadPoint(w.s - 6, w.d + (r() - 0.5) * 1.5, 0), yaw: -roadHeading(w.s) + Math.PI });
-      // and one behind it, facing the other way, for anyone coming against the traffic
-      chunk.sentinels.push({ pos: roadPoint(w.s + 6, w.d + (r() - 0.5) * 1.5, 0), yaw: -roadHeading(w.s) });
+      // one figure per car: in front for traffic, or behind (facing back) for anyone coming the wrong way
+      if (r() < 0.5) chunk.sentinels.push({ pos: roadPoint(w.s - 6, w.d + (r() - 0.5) * 1.5, 0), yaw: -roadHeading(w.s) + Math.PI });
+      else chunk.sentinels.push({ pos: roadPoint(w.s + 6, w.d + (r() - 0.5) * 1.5, 0), yaw: -roadHeading(w.s) });
+      // and someone up on the barrier wall nearby, the way they used to stand
+      const side = w.d > 0 ? 1 : -1;
+      chunk.sentinels.push({ pos: roadPoint(w.s + (r() - 0.5) * 30, side * (ROAD.HALF_WIDTH + 0.35), 0.95), yaw: -roadHeading(w.s) + Math.PI + side * 0.6 });
     }
 
     if (f.sign) this.addSign(chunk, a + 20, r);

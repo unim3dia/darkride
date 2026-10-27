@@ -278,6 +278,7 @@ function landWarp() {
   WARPS[i].go();
   // drop in from above
   vehicle.pos.y += 6;
+  vehicle.rideOff = 0; vehicle.prevY = undefined; vehicle.prevClimb = 0;
   vehicle.vel.y = 0;
   vehicle.airborne = true;
   vehicle.airTime = 0;

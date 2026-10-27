@@ -486,10 +486,12 @@ export class District {
         const w0 = this.toWorld(p.u, p.v, 0);
         const L = this.toLocal(w0.x + fx * 4.2, w0.z + fz * 4.2);
         const F = this.toLocal(w0.x + fx * 10, w0.z + fz * 10);
-        this.watcherSpots.push({ u: L.u, v: L.v, y: 0, faceU: F.u - L.u, faceV: F.v - L.v, bystander: true });
+        if (this.r() < 0.5) this.watcherSpots.push({ u: L.u, v: L.v, y: 0, faceU: F.u - L.u, faceV: F.v - L.v, bystander: true });
+        else {
         const B = this.toLocal(w0.x - fx * 4.4, w0.z - fz * 4.4);
         const BF = this.toLocal(w0.x - fx * 10, w0.z - fz * 10);
         this.watcherSpots.push({ u: B.u, v: B.v, y: 0, faceU: BF.u - B.u, faceV: BF.v - B.v, bystander: true });
+        }
       }
       if (p.sitter) this.watcherSpots.push({ u: p.u + 2.2, v: p.v, y: 0.55, faceU: 0, faceV: -1, sit: true });
     }
