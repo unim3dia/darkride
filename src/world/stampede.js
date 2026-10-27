@@ -506,8 +506,10 @@ export class Stampede {
     out.intensity = I;
     out.score = sc;
     // one held breath before the crescendo: the world goes almost entirely to fog, then they burst out of it
-    const fz = Math.abs(u - 0.58) / 0.05;
-    out.whiteout = fz < 1 ? Math.pow(Math.cos(fz * Math.PI / 2), 0.6) * this.w : 0;
+    // it creeps in over a long stretch, holds, then the herd tears it open
+    const fin = THREE.MathUtils.smoothstep(u, 0.4, 0.57);
+    const fout = 1 - THREE.MathUtils.smoothstep(u, 0.6, 0.66);
+    out.whiteout = Math.pow(fin, 1.8) * fout * this.w;
     if (this.trees) for (const tr of this.trees) tr.g.visible = Math.abs(tr.u - ur) < 0.12 && ((tr.u * 97) % 1) < sc.trees;
     const C = road.sample(this.t || 0);
     const along = vehicle.vel.x * C.tx + vehicle.vel.z * C.tz;
