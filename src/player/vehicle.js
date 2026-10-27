@@ -112,17 +112,20 @@ export class Vehicle {
     if (!this.airborne) this.driveGround(dt, input, f, r, ev);
     else this.flyAir(dt, input, ev);
 
+    const y0 = this.pos.y; // where we were before this step: a fast drop must not tunnel through a road
     this.pos.addScaledVector(this.vel, dt);
 
     // ---- ground: the deck when you're on it, the street when you're down in the district,
     // or an off-ramp out across one of the pocket worlds
     const street = this.street.contains(this.pos.x, this.pos.z) ? 0 : -Infinity;
-    const deck = onRoadPlan && this.pos.y > deckY - 2.5 ? deckY : -Infinity;
+    // a surface counts if you're near it now, or were on/above it a moment ago (no falling through)
+    const above = (y) => this.pos.y > y - 2.5 || y0 >= y - 0.4;
+    const deck = onRoadPlan && above(deckY) ? deckY : -Infinity;
     let spurHit = null;
     for (const sp of this.spurs) {
       const h = sp.query(this.pos.x, this.pos.z, this.pos.y);
       // only a road you're actually on (or just above): not one running far below, whose walls would trap you
-      if (h && Math.abs(h.d) < HW + 0.8 && this.pos.y > h.y - 2.5 && this.pos.y < h.y + 12 && (!spurHit || h.y > spurHit.y)) spurHit = h;
+      if (h && Math.abs(h.d) < HW + 0.8 && above(h.y) && this.pos.y < h.y + 12 && (!spurHit || h.y > spurHit.y)) spurHit = h;
     }
     const ramp = spurHit ? spurHit.y : -Infinity;
     const ground = Math.max(street, deck, ramp);
