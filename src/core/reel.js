@@ -300,5 +300,79 @@ export function installReel(D) {
     return { bytes, log: D.reelLog };
   }
 
-  window.REEL = { run, run2 };
+  // ---------------------------------------------------------------- reel three: same car, different worlds
+
+  async function run3() {
+    D.reelLog = [];
+    key('keydown', 'Enter'); key('keyup', 'Enter');
+    await sleep(600);
+    D.audio.silenceMusic(true);
+    for (const id of ['hint', 'zone']) { const el = document.getElementById(id); if (el) el.style.display = 'none'; }
+    begin();
+    const drive = () => key('keydown', 'KeyW');
+    // the one framing: in front and off the left fender, looking back at the car. The car never moves in frame; the world does
+    const lock = () => cam.fixed(6.5, -4.6, 1.15, 46, 0.9);
+    const long = async () => { await sleep(900); }; // extra settle so nothing pops on the first frame
+
+    // HOOK: three worlds, same shot
+    await shot('w1', async () => { weather(0.6); await onHighway(zoneStart('pines') + 400, 0, 30); highwayPilot(); drive(); lock(); await long(); }, null, 2.4);
+    await shot('w2', async () => { weather(0); await onHighway(zoneStart('monoliths') + 200, 0, 30); highwayPilot(); drive(); lock(); await long(); }, null, 2.4);
+    await shot('w3', async () => { await onSpur(3, 0.4, 30); drive(); lock(); await long(); }, null, 2.4);
+    await shot('w4', async () => { await onSpur(1, 0.42, 30); drive(); lock(); await long(); }, null, 2.4);
+    // THE JUMP: the neon jumps, then a full-charge leap on the ring with the camera swinging round
+    await shot('jumps', async () => { await at('jumps', 30); follow(D.jumps.spur); drive(); cam.chase(); await long(); }, async () => { await sleep(400); await charge(1000); }, 3.6);
+    await shot('leap', async () => { weather(0.2); await onHighway(zoneStart('ruins') + 300, 0, 34); highwayPilot(); drive(); cam.orbit(-0.9, 0.9, 10, 1.0, 3.4); await long(); }, async () => { await sleep(200); await charge(1000); }, 3.4);
+    // THE RACE: lights, then gone
+    await shot('race', async () => {
+      const T = D.race.track; const p = T.sample(T.tGrid - 6);
+      v.placeAt(p.x, p.y + 0.3, p.z, p.heading, 4); v.airborne = false; spurPilot(T); await settle(); await long();
+      D.rig.cine = (c) => { const { f, r, p: me } = frame(); c.position.copy(me).addScaledVector(f, -9).addScaledVector(r, 2.5).setY(me.y + 1.4); c.fov = 46; c.lookAt(L.copy(me).addScaledVector(f, 20).setY(me.y + 4)); };
+    }, async () => { await sleep(3600); drive(); }, 7.5);
+    // MONTAGE: places, quick
+    await shot('narrows', async () => { await onHighway(zoneStart('narrows') + 340, 2, 26); highwayPilot(); drive(); cam.chase(); await long(); }, null, 1.6);
+    await shot('wash', async () => { stopPilot(); const w = D.wash, p = w.spur.sample(w.tA - 5); v.placeAt(p.x, p.y + 0.3, p.z, p.heading, 3); v.airborne = false; follow(w.spur); await settle(); cam.cabin(); await sleep(2800); }, null, 1.6);
+    await shot('dust', async () => { await onSpur(0, 0.42, 28); drive(); cam.track(5, -3, 0.9, 50); await long(); }, null, 1.6);
+    await shot('burger', async () => {
+      const dr = D.drive; stopPilot(); const p = dr.spur.sample(dr.tAt(0.36)); v.placeAt(p.x, p.y + 0.3, p.z, p.heading, 16); v.airborne = false; follow(dr.spur); await settle(); drive(); await long();
+      const eye = dr.world(-14, -12, 1.0), sign = dr.world(-38, -14, 34);
+      D.rig.cine = (c) => { c.position.copy(eye); c.fov = 50; c.lookAt(L.copy(v.pos).lerp(sign, 0.45)); };
+    }, null, 2.6);
+    await shot('sanctum', async () => { await onSpur(2, 0.44, 26); drive(); cam.hero(); await long(); }, null, 1.6);
+    await shot('logs', async () => { D.vehicle.reset(D.logJam.s0 - 40, 0, 0, 26); await settle(); highwayPilot(); drive(); cam.track(6, -10, 2.4, 50); await long(); }, async () => { await sleep(300); await charge(700); }, 2.4);
+    await shot('drivein', async () => { await at('drive-in', 4); cam.orbit(2.6, 2.2, 9, 1.6, 2); await long(); }, null, 1.6);
+    await shot('ether', async () => { await onSpur(1, 0.36, 26); drive(); cam.chase(); await long(); }, null, 1.6);
+    // THE CHARGE, to the end
+    await shot('charge', async () => { await at('charge', 26); follow(D.herdRoad); drive(); cam.chase(); await long(); }, null, 3.4);
+    await shot('charge2', async () => { const p = D.herdRoad.sample(D.herdRoad.N * 0.32); v.placeAt(p.x, p.y + 0.4, p.z, p.heading, 28); v.airborne = false; follow(D.herdRoad); await settle(); drive(); cam.track(-5, -2, 1.0, 54); await long(); }, async () => { await sleep(1200); await charge(900); }, 4.0);
+
+    clearKeys(); stopPilot();
+    const bytes = await finish('three');
+    D.rig.cine = null;
+    return { bytes, log: D.reelLog };
+  }
+
+  /** Just the hook: the same locked shot in several worlds, to pick three from. */
+  async function hook3() {
+    D.reelLog = [];
+    key('keydown', 'Enter'); key('keyup', 'Enter');
+    await sleep(600);
+    D.audio.silenceMusic(true);
+    for (const id of ['hint', 'zone']) { const el = document.getElementById(id); if (el) el.style.display = 'none'; }
+    begin();
+    const drive = () => key('keydown', 'KeyW');
+    const lock = () => cam.fixed(6.5, -4.6, 1.15, 46, 0.9);
+    const long = async () => { await sleep(1200); };
+    await shot('pines', async () => { weather(0.6); await onHighway(zoneStart('pines') + 400, 0, 30); highwayPilot(); drive(); lock(); await long(); }, null, 3.0);
+    await shot('ruins', async () => { weather(0.2); await onHighway(zoneStart('ruins') + 300, 0, 30); highwayPilot(); drive(); lock(); await long(); }, null, 3.0);
+    await shot('zone9', async () => { weather(0.3); await onHighway(zoneStart('zone9') + 300, 0, 30); highwayPilot(); drive(); lock(); await long(); }, null, 3.0);
+    await shot('ether', async () => { await onSpur(1, 0.3, 26); drive(); lock(); await long(); }, null, 3.0);
+    await shot('sanctum', async () => { await onSpur(2, 0.44, 26); drive(); lock(); await long(); }, null, 3.0);
+    await shot('racepale', async () => { const T = D.race.track; const p = T.sample(T.tGrid + 200); v.placeAt(p.x, p.y + 0.3, p.z, p.heading, 30); v.airborne = false; spurPilot(T); await settle(); drive(); lock(); await long(); }, null, 3.0);
+    clearKeys(); stopPilot();
+    const bytes = await finish('hook');
+    D.rig.cine = null;
+    return { bytes, log: D.reelLog };
+  }
+
+  window.REEL = { run, run2, run3, hook3 };
 }
