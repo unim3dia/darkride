@@ -106,7 +106,9 @@ export function installReel(D) {
 
   // ---------------------------------------------------------------- recording
 
+  let tour = false;
   const begin = () => {
+    if (tour && rec) return;
     const canvas = D.renderer.domElement;
     const stream = canvas.captureStream(30);
     const a = D.audio;
@@ -118,9 +120,9 @@ export function installReel(D) {
     rec = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9,opus', videoBitsPerSecond: 14e6, audioBitsPerSecond: 192e3 });
     rec.ondataavailable = (e) => e.data.size && parts.push(e.data);
     rec.start(250);
-    rec.pause();
+    if (!tour) rec.pause();
   };
-  const finish = (name = 'raw') => new Promise((res) => {
+  const finish = (name = 'raw') => (tour && name !== 'tour') ? Promise.resolve(0) : new Promise((res) => {
     rec.onstop = async () => {
       const blob = new Blob(parts, { type: 'video/webm' });
       await fetch(`/__reel?name=${name}`, { method: 'POST', body: blob });
@@ -134,9 +136,9 @@ export function installReel(D) {
     clearKeys();
     await setup();
     const t0 = performance.now();
-    rec.resume();
+    if (!tour) rec.resume();
     await Promise.all([action ? action() : null, sleep(dur * 1000)]);
-    rec.pause();
+    if (!tour) rec.pause();
     D.reelLog.push(`${name}: ${((performance.now() - t0) / 1000).toFixed(2)}s`);
   };
 
@@ -146,7 +148,7 @@ export function installReel(D) {
     D.reelLog = [];
     key('keydown', 'Enter'); key('keyup', 'Enter');
     await sleep(600);
-    D.audio.silenceMusic(true);
+    if (!tour) D.audio.silenceMusic(true);
     document.getElementById('hint').style.display = 'none';
     document.getElementById('zone').style.display = 'none';
     begin();
@@ -236,7 +238,7 @@ export function installReel(D) {
     D.reelLog = [];
     key('keydown', 'Enter'); key('keyup', 'Enter');
     await sleep(600);
-    D.audio.silenceMusic(true);
+    if (!tour) D.audio.silenceMusic(true);
     for (const id of ['hint', 'zone']) { const el = document.getElementById(id); if (el) el.style.display = 'none'; }
     begin();
     const start = { s: v.s, pos: v.pos.clone(), yaw: v.yaw };
@@ -306,7 +308,7 @@ export function installReel(D) {
     D.reelLog = [];
     key('keydown', 'Enter'); key('keyup', 'Enter');
     await sleep(600);
-    D.audio.silenceMusic(true);
+    if (!tour) D.audio.silenceMusic(true);
     for (const id of ['hint', 'zone']) { const el = document.getElementById(id); if (el) el.style.display = 'none'; }
     begin();
     const drive = () => key('keydown', 'KeyW');
@@ -356,7 +358,7 @@ export function installReel(D) {
     D.reelLog = [];
     key('keydown', 'Enter'); key('keyup', 'Enter');
     await sleep(600);
-    D.audio.silenceMusic(true);
+    if (!tour) D.audio.silenceMusic(true);
     for (const id of ['hint', 'zone']) { const el = document.getElementById(id); if (el) el.style.display = 'none'; }
     begin();
     const drive = () => key('keydown', 'KeyW');
@@ -379,7 +381,7 @@ export function installReel(D) {
     D.reelLog = [];
     key('keydown', 'Enter'); key('keyup', 'Enter');
     await sleep(600);
-    D.audio.silenceMusic(true);
+    if (!tour) D.audio.silenceMusic(true);
     for (const id of ['hint', 'zone']) { const el = document.getElementById(id); if (el) el.style.display = 'none'; }
     begin();
     const drive = () => key('keydown', 'KeyW');
@@ -408,5 +410,70 @@ export function installReel(D) {
     return { bytes, log: D.reelLog };
   }
 
-  window.REEL = { run, run2, run3, hook3, midrace };
+  /** One long unedited take: every tour, recorder never stops, music on. */
+  async function long() {
+    tour = true;
+    const log = [];
+    for (const f of [hook3, run3, midrace, run2]) { const r = await f(); log.push(...r.log); }
+    const bytes = await finish('tour');
+    tour = false;
+    return { bytes, log };
+  }
+
+  /**
+   * A fresh, unscripted ride: the game's own R-I-D-E warp throws the car somewhere
+   * new, and it drives, hops, leans, jumps and swaps cameras there before warping on.
+   * One take, recorder never stops, music on.
+   */
+  async function fresh(stops = 14) {
+    tour = true;
+    D.reelLog = [];
+    key('keydown', 'Enter'); key('keyup', 'Enter');
+    await sleep(800);
+    for (const id of ['hint']) { const el = document.getElementById(id); if (el) el.style.display = 'none'; }
+    begin();
+    const pick = (a) => a[Math.floor(Math.random() * a.length)];
+    // steer along whatever road we're on
+    stopPilot();
+    pilot = setInterval(() => {
+      if (v.airborne) return;
+      let tg;
+      const h = v.spurHit;
+      if (h && h.spur) tg = h.spur.at(h.t + 14, 0, 0);
+      else { const S = sample(v.s + 12); tg = S; }
+      let e = Math.atan2(tg.x - v.pos.x, -(tg.z - v.pos.z)) - v.yaw;
+      e = Math.atan2(Math.sin(e), Math.cos(e));
+      v.yaw += e * 0.12;
+    }, 16);
+    const warpOn = async () => { for (const c of ['KeyR', 'KeyI', 'KeyD', 'KeyE']) { await tap(c, 40); await sleep(60); } };
+    const cams = [() => cam.chase(), () => cam.chase(), () => cam.hero(), () => cam.cabin(), () => cam.orbit(0, Math.PI * 1.2, 9, 1.3, 6), () => cam.track(-5, -3, 1.1, 50), () => cam.fixed(6.5, -4.6, 1.15, 46, 0.9)];
+    const moves = [
+      async () => { await charge(1000); await sleep(1500); },                                     // full jump
+      async () => { for (let i = 0; i < 3; i++) { await tap('Space'); await sleep(450); } },      // hops
+      async () => { key('keydown', 'KeyQ'); await sleep(900); key('keyup', 'KeyQ'); key('keydown', 'KeyE'); await sleep(900); key('keyup', 'KeyE'); },
+      async () => { key('keydown', 'ShiftLeft'); await sleep(1100); key('keyup', 'ShiftLeft'); },
+      async () => { key('keyup', 'KeyW'); key('keydown', 'KeyS'); await sleep(700); key('keyup', 'KeyS'); key('keydown', 'KeyW'); },
+      async () => { await sleep(1800); },                                                         // just drive
+    ];
+    const t0 = performance.now();
+    for (let i = 0; i < stops; i++) {
+      key('keydown', 'KeyW');
+      if (i > 0) await warpOn();
+      await sleep(2600); // the launch, the fall, the landing
+      D.reelLog.push(`${((performance.now() - t0) / 1000).toFixed(1)}s ${D.state.lastWarp || 'start'}`);
+      pick(cams)();
+      for (let k = 0; k < 3; k++) { await pick(moves)(); await sleep(300); }
+      if (Math.random() < 0.5) { pick(cams)(); await pick(moves)(); }
+      D.rig.cine = null;
+    }
+    clearKeys(); stopPilot();
+    tour = false;
+    const bytes = await new Promise((res) => {
+      rec.onstop = async () => { const blob = new Blob(parts, { type: 'video/webm' }); await fetch('/__reel?name=fresh', { method: 'POST', body: blob }); res(blob.size); };
+      rec.stop();
+    });
+    return { bytes, log: D.reelLog };
+  }
+
+  window.REEL = { run, run2, run3, hook3, midrace, long, fresh };
 }
