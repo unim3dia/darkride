@@ -374,5 +374,39 @@ export function installReel(D) {
     return { bytes, log: D.reelLog };
   }
 
-  window.REEL = { run, run2, run3, hook3 };
+  /** The race already under way: dropped mid-lap with the limo alongside. */
+  async function midrace() {
+    D.reelLog = [];
+    key('keydown', 'Enter'); key('keyup', 'Enter');
+    await sleep(600);
+    D.audio.silenceMusic(true);
+    for (const id of ['hint', 'zone']) { const el = document.getElementById(id); if (el) el.style.display = 'none'; }
+    begin();
+    const drive = () => key('keydown', 'KeyW');
+    const T = D.race.track, R = D.race.rival;
+    const midLap = async (frac, lead) => {
+      stopPilot();
+      const t = T.tGrid + (T.tFinish - T.tGrid) * frac;
+      const p = T.at(t, 1.6, 0), a = T.sample(t);
+      v.placeAt(p.x, p.y + 0.3, p.z, a.heading, 34); v.airborne = false;
+      spurPilot(T); drive();
+      await sleep(200);
+      const race = D.race;
+      race.enter({ t, d: 1.6 }); race.raced = true;
+      race.phase = 'racing'; race.t = 3;
+      R.t = t + lead; R.dist = t + lead; R.v = 34; R.lane = -3.2;
+      race.playerDist = t; race.playerLastT = t;
+      race.set.lamps.forEach((l) => l.material.color.setRGB(0.3, 3, 0.6));
+      await settle(); await sleep(900);
+    };
+    await shot('mid1', async () => { await midLap(0.35, 2); cam.track(-6, 1, 1.2, 50); }, null, 3.2);
+    await shot('mid2', async () => { await midLap(0.55, -4); cam.chase(); }, null, 3.2);
+    await shot('mid3', async () => { await midLap(0.7, 6); cam.fixed(9, 2.5, 0.7, 44, 1.0); }, null, 3.2);
+    clearKeys(); stopPilot();
+    const bytes = await finish('race');
+    D.rig.cine = null;
+    return { bytes, log: D.reelLog };
+  }
+
+  window.REEL = { run, run2, run3, hook3, midrace };
 }
