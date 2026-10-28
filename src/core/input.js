@@ -73,12 +73,15 @@ export function readInput() {
   const spelled = typed.length === 4 && typed.map((k) => k.code).join() === 'KeyR,KeyI,KeyD,KeyE' && performance.now() - typed[0].t < 2500;
   // or type R-A-C-E: straight to the grid
   const raced = typed.length === 4 && typed.map((k) => k.code).join() === 'KeyR,KeyA,KeyC,KeyE' && performance.now() - typed[0].t < 2500;
-  if (spelled || raced) typed.length = 0;
+  // or type M-A-P: the map comes up
+  const last3 = typed.slice(-3);
+  const mapped = last3.length === 3 && last3.map((k) => k.code).join() === 'KeyM,KeyA,KeyP' && performance.now() - last3[0].t < 2500;
+  if (spelled || raced || mapped) typed.length = 0;
   const warp = raced ? 'race' : (ride && !rideLatch) || spelled;
   rideLatch = ride;
 
   const out = {
-    warp,
+    warp, map: mapped,
     throttle, brake, steer, hopHeld, hopPressed, view, liftFront, liftLeft, liftRight,
     mute: pressed.has('KeyM'), any: pressed.size > 0,
   };

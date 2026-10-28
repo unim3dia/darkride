@@ -236,7 +236,7 @@ body.touch .hint { display: none; }
 /* the white-out when R-I-D-E throws you somewhere else */
 .warp-flash { position: fixed; inset: 0; background: #f2efe8; opacity: 0; pointer-events: none; z-index: 40; }
 
-/* the course map, from the title screen */
+/* the course map (type M-A-P) */
 .map-btn {
   margin-top: 1.4rem; padding: 0.55rem 1.4rem; background: transparent; color: var(--bone-dim);
   border: 1px solid rgba(217, 226, 230, 0.3); font-family: var(--font-mono); font-size: 0.75rem;

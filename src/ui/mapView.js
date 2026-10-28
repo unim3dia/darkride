@@ -142,6 +142,20 @@ export function drawMap(D, size = 2000) {
   const st = D.start;
   g.beginPath(); g.arc(X(st.x), Y(st.z), 8 * k, 0, 7); g.fillStyle = '#fff'; g.fill();
 
+  // you: a pulsing red arrow pointing the way the car faces, and where that is
+  if (D.here) {
+    const hx = X(D.here.x), hy = Y(D.here.z);
+    for (const [r, a] of [[70, 0.12], [44, 0.25]]) { g.beginPath(); g.arc(hx, hy, r * k, 0, 7); g.fillStyle = `rgba(255,60,50,${a})`; g.fill(); }
+    g.save();
+    g.translate(hx, hy);
+    g.rotate(Math.atan2(-Math.cos(D.here.yaw), Math.sin(D.here.yaw)));
+    g.beginPath(); g.moveTo(26 * k, 0); g.lineTo(-16 * k, 16 * k); g.lineTo(-8 * k, 0); g.lineTo(-16 * k, -16 * k); g.closePath();
+    g.fillStyle = '#ff3c32'; g.strokeStyle = '#fff'; g.lineWidth = 4 * k; g.fill(); g.stroke();
+    g.restore();
+    text('YOU ARE HERE', hx, hy - 90 * k, font(26), '#ff5a4e');
+    if (D.here.name) text(D.here.name, hx, hy + 92 * k, mono(22), '#e6edf0');
+    text('you are near ' + (D.here.name || 'the ring').toLowerCase(), 92 * k, 190 * k, mono(22), '#ff5a4e', 'left');
+  }
   text('DARKRIDE', 90 * k, 100 * k, font(50), '#e6edf0', 'left');
   text('the ring road and everything off it', 92 * k, 150 * k, mono(17), 'rgba(230,237,240,0.6)', 'left');
   return c;

@@ -637,32 +637,35 @@ function startRide() {
   rig.blend = 0;
 }
 window.addEventListener('pointerdown', startRide);
-// the map: shows the whole course, drawn from the game itself; any press closes it
-{
-  const btn = document.getElementById('map-btn');
-  const view = document.getElementById('map');
-  const open = (e) => {
-    e.stopPropagation();
-    e.preventDefault();
-    const D = {
-      forks, herdRoad, hood, race, district, narrows,
-      driveIn: district.toWorld((LOT.u0 + LOT.u1) / 2, LOT.aisleV),
-      start: district.toWorld(150, district.roadV(150)),
-      extras: sidesRef.map((pl) => pl.mapPin()),
-    };
-    const src = drawMap(D, 2000);
-    const cv = document.getElementById('map-canvas');
-    cv.width = src.width; cv.height = src.height;
-    cv.getContext('2d').drawImage(src, 0, 0);
-    view.hidden = false;
-    state.mapOpen = true;
+// the map: type M-A-P any time. It shows the whole course, drawn from the game itself,
+// with you on it; the ride holds still until a tap or Esc brings you back
+const mapView = document.getElementById('map');
+function openMap() {
+  // off the ring, name the place you're in rather than the stretch of ring beside it
+  const side = vehicle.spurHit && sidesRef.find((pl) => pl.hit(vehicle));
+  const z = side ? { name: side.name } : ZONES[zoneIndexAt(vehicle.s)];
+  const D = {
+    forks, herdRoad, hood, race, district, narrows,
+    driveIn: district.toWorld((LOT.u0 + LOT.u1) / 2, LOT.aisleV),
+    start: district.toWorld(150, district.roadV(150)),
+    extras: sidesRef.map((pl) => pl.mapPin()),
+    here: state.mode === 'ride' ? { x: vehicle.pos.x, z: vehicle.pos.z, yaw: vehicle.yaw, name: z?.name ?? '' } : null,
   };
-  btn.addEventListener('pointerdown', open);
-  btn.addEventListener('click', (e) => e.stopPropagation());
-  const close = (e) => { if (!state.mapOpen) return; e.stopPropagation(); view.hidden = true; setTimeout(() => { state.mapOpen = false; }, 50); };
-  view.addEventListener('pointerdown', close);
-  window.addEventListener('keydown', (e) => { if (state.mapOpen) { e.stopImmediatePropagation(); close(e); } }, true);
+  const src = drawMap(D, 2000);
+  const cv = document.getElementById('map-canvas');
+  cv.width = src.width; cv.height = src.height;
+  cv.getContext('2d').drawImage(src, 0, 0);
+  mapView.hidden = false;
+  state.mapOpen = true;
 }
+function closeMap(e) {
+  if (!state.mapOpen) return;
+  e?.stopPropagation();
+  mapView.hidden = true;
+  setTimeout(() => { state.mapOpen = false; }, 50);
+}
+mapView.addEventListener('pointerdown', closeMap);
+window.addEventListener('keydown', (e) => { if (state.mapOpen) { e.stopImmediatePropagation(); if (e.code === 'Escape') closeMap(e); } }, true);
 // some browsers let a page make sound straight away; if this one does, the beat is already playing
 try {
   audio.start();
@@ -880,6 +883,8 @@ function tick(now) {
   state.time += dt;
 
   const input = TOUCH ? mergeTouch(readInput()) : readInput();
+  if (input.map && !state.mapOpen) { audio.toggleMute(); openMap(); } // the M of M-A-P muted; put it back
+  if (state.mapOpen) { last = now; return; }
   if (state.mode === 'title' && input.any) startRide();
   if (input.mute) audio.toggleMute();
   if (input.view && state.mode === 'ride') rig.cycle();
