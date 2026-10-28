@@ -76,8 +76,8 @@ function plateTexture(top, bottom) {
   return t;
 }
 
-function plateSign(top, bottom, pos, yaw) {
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(13, 6.5), new THREE.MeshBasicMaterial({ map: plateTexture(top, bottom), color: new THREE.Color(0.85, 0.85, 0.85), fog: false, toneMapped: false }));
+function plateSign(top, bottom, pos, yaw, scale = 1) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(13 * scale, 6.5 * scale), new THREE.MeshBasicMaterial({ map: plateTexture(top, bottom), color: new THREE.Color(0.85, 0.85, 0.85), fog: false, toneMapped: false }));
   m.position.copy(pos);
   m.rotation.y = yaw;
   scene.add(m);
@@ -89,14 +89,39 @@ function plateSign(top, bottom, pos, yaw) {
   for (const x of [-ROAD.HALF_WIDTH - 3, ROAD.HALF_WIDTH + 3]) { const post = new THREE.Mesh(new THREE.BoxGeometry(0.35, 10, 0.35), steel); post.position.set(x, -2.3, -0.3); m.add(post); }
 }
 
-function roadSign(top, bottom, pos, yaw, colors) {
-  const mat = new THREE.MeshBasicMaterial({ map: neonTexture(top, bottom, colors), color: new THREE.Color(0.95, 0.95, 0.95), transparent: true, depthWrite: false, fog: false });
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(8.4, 4.2), mat);
-  m.position.copy(pos);
-  m.rotation.y = yaw;
-  scene.add(m);
-  ROAD_SIGNS.push({ mat, seed: Math.random() * 10 });
+/** The same board run through a heavy blur: what the sign looks like out of focus. */
+function blurredCopy(tex) {
+  const src = tex.image;
+  const c = document.createElement('canvas');
+  c.width = src.width;
+  c.height = src.height;
+  const g = c.getContext('2d');
+  g.filter = 'blur(9px)';
+  g.drawImage(src, 0, 0);
+  g.globalAlpha = 0.6;
+  g.drawImage(src, 0, 0); // a second pass so it still glows like the sharp one
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
 }
+
+/**
+ * A neon road sign that pulls focus: a soft blur from far off, sharp and readable
+ * as you close in, then blown-out and blurry again once you're past.
+ */
+function roadSign(top, bottom, pos, yaw, colors) {
+  const sharpTex = neonTexture(top, bottom, colors);
+  const mk = (map) => new THREE.MeshBasicMaterial({ map, color: new THREE.Color(0.95, 0.95, 0.95), transparent: true, depthWrite: false, fog: false });
+  const mat = mk(sharpTex);
+  const blur = mk(blurredCopy(sharpTex));
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(8.4, 4.2), mat);
+  const mb = new THREE.Mesh(new THREE.PlaneGeometry(9.2, 4.6), blur);
+  for (const o of [m, mb]) { o.position.copy(pos); o.rotation.y = yaw; scene.add(o); }
+  ROAD_SIGNS.push({ mat, blur, pos: pos.clone(), nx: Math.sin(yaw), nz: Math.cos(yaw), seed: Math.random() * 10 });
+}
+
+const FOCUS_FAR = 150;  // beyond this the sign is a soft glow
+const FOCUS_NEAR = 70;  // inside this (and ahead of you) it's sharp
 const sky = createSky(scene);
 const rain = createRain(scene);
 const audio = new Audio();
@@ -492,10 +517,29 @@ const movie = new DriveInMovie(district, district.driveIn.booth);
 // just past the Narrows, a left-hand exit: the road becomes the circuit, one long lap, and comes back
 const race = new Race(scene, rng(5150));
 vehicle.spurs.push(race.track);
-for (const dist of [1200, 900, 600, 300, 120]) {
+for (const [dist, scale] of [[600, 1], [150, 1.5]]) {
   const A = sample(race.track.sA - dist);
-  const v = new THREE.Vector3(A.x - A.nx * 2.5, A.y + 8, A.z - A.nz * 2.5); // hung over the left lane, gantry-style
-  plateSign('← THE RACE', `${dist} m · exit left`, v, Math.atan2(-A.tx, -A.tz));
+  const v = new THREE.Vector3(A.x - A.nx * 2.5, A.y + 8 + (scale - 1) * 3, A.z - A.nz * 2.5); // hung over the left lane, gantry-style
+  plateSign('← THE RACE', dist > 200 ? `${dist} m · exit left` : 'FOLLOW THE ARROWS', v, Math.atan2(-A.tx, -A.tz), scale);
+}
+raceChevrons();
+
+/** Glowing arrows painted on the road from the last sign, across into the exit and down it to the grid. */
+function raceChevrons() {
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 1.6); shape.lineTo(1.6, -0.4); shape.lineTo(1.0, -0.9); shape.lineTo(0, 0.4); shape.lineTo(-1.0, -0.9); shape.lineTo(-1.6, -0.4); shape.closePath();
+  const geo = new THREE.ShapeGeometry(shape).rotateX(-Math.PI / 2);
+  const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.2, 1.9, 0.5), toneMapped: false, fog: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4 });
+  const put = (x, y, z, tx, tz) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y + 0.06, z); m.rotation.y = Math.atan2(tx, tz) + Math.PI; scene.add(m); };
+  // on the ring: drifting from the middle of the road over to the left edge where the exit leaves
+  for (let k = 140; k >= 0; k -= 10) {
+    const A = sample(race.track.sA - k);
+    const d = -(1 - k / 140) * (ROAD.HALF_WIDTH - 1.5);
+    put(A.x + A.nx * d, A.y, A.z + A.nz * d, A.tx, A.tz);
+  }
+  // and down the exit itself
+  const T = race.track;
+  for (let t = 4; t < Math.min(T.tGrid - 20, 160); t += 10) { const P = T.sample(t); put(P.x, P.y, P.z, P.tx, P.tz); }
 }
 const atmos = new Atmos(scene);
 const stampede = new Stampede(scene);
@@ -981,7 +1025,17 @@ function tick(now) {
   state.aberration *= Math.exp(-raw * 4);
   post.uAberration.value = state.aberration + (vehicle.airborne ? 0.08 : 0);
   post.uTime.value = state.time;
-  for (const sg of ROAD_SIGNS) sg.mat.color.setScalar(Math.sin(state.time * 23 + sg.seed) > -0.9 ? 1.6 : 0.6);
+  for (const sg of ROAD_SIGNS) {
+    const flick = Math.sin(state.time * 23 + sg.seed) > -0.9 ? 1 : 0.4;
+    const dx = vehicle.pos.x - sg.pos.x, dz = vehicle.pos.z - sg.pos.z;
+    const ahead = dx * sg.nx + dz * sg.nz > 0; // you're on the side it faces: still coming up to it
+    const focus = ahead ? 1 - THREE.MathUtils.smoothstep(Math.hypot(dx, dz), FOCUS_NEAR, FOCUS_FAR) : 0;
+    sg.f = (sg.f ?? focus) + (focus - (sg.f ?? focus)) * Math.min(1, raw * 3);
+    sg.mat.opacity = sg.f;
+    sg.blur.opacity = 1 - sg.f;
+    sg.mat.color.setScalar(1.6 * flick);
+    sg.blur.color.setScalar((ahead ? 1.4 : 2.4) * flick); // past it, it flares bright
+  }
   // the place's own weather: a lid of fog, banks at the lens, hail
   const sky = state.mode === 'ride' && !vehicle.spurHit ? atmos.update(raw, state.time, vehicle.s, camera) : atmos.update(raw, state.time, null, camera);
   post.uTopFog.value = sky.top;
@@ -1024,6 +1078,7 @@ function tick(now) {
     bloom.strength = 0.7 + (fx ? (fx.bloom - 0.7) * w : 0);
   }
   post.uFlash.value = Math.max(post.uFlash.value * Math.exp(-raw * 3), ambient.flash * 0.05);
+  carView.renderMirror(renderer, scene);
   composer.render();
 }
 

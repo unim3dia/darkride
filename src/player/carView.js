@@ -3,7 +3,6 @@
 import * as THREE from 'three';
 import { buildPlayerCar, buildRider, WHEEL_RADIUS } from './carModel.js';
 import { buildBeam, buildTailGlow, buildWipers, stainTexture } from './carLights.js';
-import { Reflector } from 'three/addons/objects/Reflector.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -55,8 +54,18 @@ export class CarView {
     const chrome = new THREE.MeshStandardMaterial({ color: 0x1a1c1f, roughness: 0.3, metalness: 0.9, envMapIntensity: 1 });
     const housing = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 12).scale(0.148, 0.09, 0.05).translate(0, 0, -0.035), chrome);
     const rim = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.012, 6, 28).scale(1.42, 0.86, 1), chrome);
-    this.mirror = new Reflector(new THREE.CircleGeometry(1, 40).scale(0.137, 0.08, 1), { textureWidth: 384, textureHeight: 224, color: 0x9aa3a8, clipBias: 0.003 });
-    this.mirror.position.z = 0.002;
+    // the glass shows what a little camera out on the door sees looking back, flipped like a mirror
+    this.mirrorTarget = new THREE.WebGLRenderTarget(320, 190, { colorSpace: THREE.SRGBColorSpace });
+    const mirrorGeo = new THREE.CircleGeometry(1, 40).scale(0.137, 0.08, 1);
+    const uv = mirrorGeo.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setX(i, 1 - uv.getX(i));
+    this.mirror = new THREE.Mesh(mirrorGeo, new THREE.MeshBasicMaterial({ map: this.mirrorTarget.texture, color: new THREE.Color(1.5, 1.55, 1.6), toneMapped: false }));
+    this.mirrorCam = new THREE.PerspectiveCamera(36, 320 / 190, 1.0, 600);
+    // out past the door, looking back down the side of the car and a little outward
+    this.mirrorCam.position.set(-1.7, 1.4, -0.9);
+    this.mirrorCam.lookAt(-3.6, 1.1, 12);
+    this.model.body.add(this.mirrorCam);
+    this.mirror.position.z = 0.022; // proud of the housing shell, which bulges forward to z 0.015
     // the arm back to the door
     const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.16, 6).rotateZ(Math.PI / 2).translate(0.15, -0.04, -0.05), chrome);
     mount.add(housing, rim, this.mirror, arm);
@@ -105,6 +114,18 @@ export class CarView {
       this.model.body.add(g);
       return g;
     });
+  }
+
+  /** Draw what the side mirror sees (only from the driver's seat, before the frame is rendered). */
+  renderMirror(renderer, scene) {
+    if (!this.inside) return;
+    this.mirrorCam.updateMatrixWorld();
+    this.mirror.visible = false;
+    const prev = renderer.getRenderTarget();
+    renderer.setRenderTarget(this.mirrorTarget);
+    renderer.render(scene, this.mirrorCam);
+    renderer.setRenderTarget(prev);
+    this.mirror.visible = true;
   }
 
   /**
