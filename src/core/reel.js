@@ -120,10 +120,10 @@ export function installReel(D) {
     rec.start(250);
     rec.pause();
   };
-  const finish = () => new Promise((res) => {
+  const finish = (name = 'raw') => new Promise((res) => {
     rec.onstop = async () => {
       const blob = new Blob(parts, { type: 'video/webm' });
-      await fetch('/__reel?name=raw', { method: 'POST', body: blob });
+      await fetch(`/__reel?name=${name}`, { method: 'POST', body: blob });
       res(blob.size);
     };
     rec.stop();
@@ -213,5 +213,92 @@ export function installReel(D) {
     return { bytes, log: D.reelLog };
   }
 
-  window.REEL = { run };
+  // ---------------------------------------------------------------- reel two: the mystery cut
+
+  /** Drop the car at a named warp spot (no fall), settled, with the pilot on whatever road it's on. */
+  const at = async (name, speed) => {
+    stopPilot();
+    const w = D.spots().find((q) => q.name.toLowerCase().includes(name));
+    w.go();
+    if (speed !== undefined) v.vel.setLength(speed);
+    v.airborne = false;
+    await settle();
+  };
+  const follow = (sp) => (sp ? spurPilot(sp) : highwayPilot());
+  /** Camera nailed to a spot in the world, watching the car go by. */
+  const post = (pos, fov = 40, lookUp = 0.9) => {
+    D.rig.cine = (c) => { c.position.copy(pos); c.fov = fov; c.lookAt(L.copy(v.pos).setY(v.pos.y + lookUp)); };
+  };
+  const ahead = (dist, side, up) => { const { f, r, p } = frame(); return p.addScaledVector(f, dist).addScaledVector(r, side).setY(p.y + up); };
+  const charge = async (ms) => { key('keydown', 'Space'); await sleep(ms); key('keyup', 'Space'); };
+
+  async function run2() {
+    D.reelLog = [];
+    key('keydown', 'Enter'); key('keyup', 'Enter');
+    await sleep(600);
+    D.audio.silenceMusic(true);
+    for (const id of ['hint', 'zone']) { const el = document.getElementById(id); if (el) el.style.display = 'none'; }
+    begin();
+    const start = { s: v.s, pos: v.pos.clone(), yaw: v.yaw };
+    const home = async () => { stopPilot(); v.placeAt(start.pos.x, 0, start.pos.z, start.yaw, 0); await settle(start.s); };
+    const drive = () => key('keydown', 'KeyW');
+
+    // HOOK. pitch dark highway, a camera on the deck; the car comes down right in front of it and the world draws itself
+    await shot('hook', async () => {
+      weather(0); await onHighway(zoneStart('pines') + 300, 0, 30); highwayPilot(); drive();
+      post(ahead(150, -7, 0.4), 46, 1.2);
+    }, async () => { await sleep(500); await charge(1000); }, 6.5);
+    // THE CAR. at the curb, rain, slow push; nose up; three-wheel
+    await shot('curb', async () => { weather(0.7); await home(); cam.orbit(0.8, 0.2, 7.5, 0.9, 3.4); }, async () => { await sleep(2500); await tap('Space'); }, 3.2);
+    await shot('lift', async () => { await home(); cam.fixed(0.2, 8.8, 1.0, 36, 1.0); }, async () => {
+      await sleep(200); key('keydown', 'ShiftLeft'); await sleep(1100); key('keyup', 'ShiftLeft'); await sleep(500); await tap('Space');
+    }, 2.6);
+    await shot('lean', async () => { await home(); cam.fixed(7.2, 3.2, 0.8, 38, 0.95); }, async () => {
+      await sleep(150); key('keydown', 'KeyQ'); await sleep(1000); key('keyup', 'KeyQ'); await sleep(200); key('keydown', 'KeyE'); await sleep(900); key('keyup', 'KeyE');
+    }, 2.6);
+    // THE RING. behind the wheel, the silver towers, the inner city
+    await shot('cabin', async () => { weather(0.3); await onHighway(2350, -2, 32); highwayPilot(); drive(); cam.cabin(); }, null, 2.4);
+    await shot('monoliths', async () => { weather(0); await onHighway(zoneStart('monoliths') + 150, 0, 34); highwayPilot(); drive(); cam.track(-4.5, -6, 1.2, 50); }, null, 2.4);
+    await shot('narrows', async () => { await onHighway(zoneStart('narrows') + 340, 2, 26); highwayPilot(); drive(); cam.chase(); }, null, 2.2);
+    await shot('ringjump', async () => { await onHighway(zoneStart('colonnade') + 200 || 4000, 0, 32); highwayPilot(); drive(); cam.orbit(-0.6, 0.6, 9, 1.2, 3); }, async () => { await sleep(200); await charge(900); }, 3.0);
+    // THE EXITS. a run of places, cut on the landings
+    await shot('logs', async () => { await at('logs', 26); D.vehicle.reset(D.logJam.s0 - 40, 0, 0, 26); await settle(); highwayPilot(); drive(); cam.track(6, -10, 2.4, 50); }, async () => { await sleep(500); await charge(700); }, 3.6);
+    await shot('charge', async () => { await at('charge', 26); follow(D.herdRoad); drive(); cam.chase(); }, null, 2.6);
+    await shot('mud', async () => { stopPilot(); { const m = D.mud, p = m.spur.sample(m.tM0 + 60); v.placeAt(p.x, p.y + 0.3, p.z, p.heading, 24); v.airborne = false; await settle(); } follow(D.mud.spur); drive(); cam.track(-4, -6, 1.3, 50); }, async () => { await sleep(1300); await charge(600); }, 3.0);
+    await shot('race', async () => {
+      const T = D.race.track; const p = T.sample(T.tGrid - 6);
+      v.placeAt(p.x, p.y + 0.3, p.z, p.heading, 4); v.airborne = false; spurPilot(T); await settle();
+      D.rig.cine = (c) => { const { f, r, p: me } = frame(); c.position.copy(me).addScaledVector(f, -9).addScaledVector(r, 2.5).setY(me.y + 1.4); c.fov = 46; c.lookAt(L.copy(me).addScaledVector(f, 20).setY(me.y + 4)); };
+    }, async () => { await sleep(3600); drive(); }, 5.6);
+    await shot('wash', async () => { stopPilot(); const w = D.wash, p = w.spur.sample(w.tA - 5); v.placeAt(p.x, p.y + 0.3, p.z, p.heading, 3); v.airborne = false; follow(w.spur); await settle(); cam.cabin(); await sleep(2500); }, null, 3.6);
+    await shot('burger', async () => {
+      const dr = D.drive; stopPilot(); const p = dr.spur.sample(dr.tAt(0.36)); v.placeAt(p.x, p.y + 0.3, p.z, p.heading, 16); v.airborne = false; follow(dr.spur); await settle(); drive();
+      const eye = dr.world(-14, -12, 1.0), sign = dr.world(-38, -14, 34);
+      D.rig.cine = (c) => { c.position.copy(eye); c.fov = 50; c.lookAt(L.copy(v.pos).lerp(sign, 0.45)); };
+    }, null, 3.0);
+    await shot('jumps', async () => { await at('jumps', 30); follow(D.jumps.spur); drive(); cam.chase(); }, async () => { await sleep(400); await charge(1000); }, 3.4);
+    await shot('ether', async () => { await onSpur(1, 0.4, 26); drive(); cam.hero(); }, null, 2.4);
+    await shot('dust', async () => { await onSpur(0, 0.42, 28); drive(); cam.track(5, -3, 0.9, 50); }, null, 2.2);
+    // THE TURN. quiet. hop at a parked lowrider, and it hops back
+    await shot('answer', async () => {
+      weather(0.4); stopPilot();
+      const d = D.district;
+      const a = D.answerers.list[0];
+      const loc = d.toLocal(a.pos.x, a.pos.z);
+      const p = d.toWorld(loc.u, d.roadV(loc.u) + 2, 0);
+      v.placeAt(p.x, 0, p.z, -d.yawToward(0, 1), 0);
+      a.exchanges = 0; a.trusted = false; a.cooldown = 0;
+      await settle();
+      D.rig.cine = (c) => { const { f, r, p: me } = frame(); c.position.copy(me).addScaledVector(f, -8).addScaledVector(r, -5).setY(2.2); c.fov = 44; c.lookAt(L.copy(me).lerp(a.pos, 0.55).setY(1.1)); };
+    }, async () => { await sleep(300); await charge(450); }, 4.2);
+    // GONE. the car pulls away from a camera left behind on the road, into the fog
+    await shot('gone', async () => { weather(0.2); await onHighway(zoneStart('pale') + 200, 0, 6); highwayPilot(); drive(); post(ahead(-3, 1.5, 0.7), 38, 0.8); }, null, 5.0);
+
+    clearKeys(); stopPilot();
+    const bytes = await finish('two');
+    D.rig.cine = null;
+    return { bytes, log: D.reelLog };
+  }
+
+  window.REEL = { run, run2 };
 }
