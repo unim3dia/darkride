@@ -655,6 +655,73 @@ export class Audio {
     o.stop(t + attack + dur + 0.1);
   }
 
+  /** A panned blip: the countdown lamps sound from where they hang (left, centre, right). */
+  blip(freq, peak, dur, pan, { type = 'square', delay = 0 } = {}) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime + delay;
+    const o = this.ctx.createOscillator();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, t);
+    const g = this.gain();
+    const p = this.ctx.createStereoPanner();
+    p.pan.value = pan;
+    o.connect(this.filter('lowpass', 2400)).connect(g).connect(p).connect(this.master);
+    const w = this.gain(0.45); g.connect(w).connect(this.verbIn);
+    this.env(g, t, 0.004, peak, dur);
+    o.start(t);
+    o.stop(t + dur + 0.1);
+  }
+
+  /** Lamp n of 3: a beep that climbs with each lamp, and its echo answered from the other side. */
+  countdown(n) {
+    if (!this.ctx) return;
+    const f = [0, 330, 392, 494][n] || 392;
+    const pan = (n - 2) * 0.8;
+    this.blip(f, 0.14, 0.32, pan);
+    this.blip(f, 0.07, 0.3, -pan, { delay: 0.18 });   // the mirror
+    this.tone(f / 4, 0.25, 0.25, { to: f / 6, wet: 0.2 });
+  }
+
+  /** GO: the same beep an octave up from both sides at once, a chord and a thump. */
+  raceGo() {
+    if (!this.ctx) return;
+    for (const pan of [-0.8, 0, 0.8]) this.blip(988, 0.1, 0.9, pan);
+    for (const [f, d] of [[494, 0], [622, 0.04], [740, 0.08]]) this.tone(f, 0.08, 1.4, { type: 'triangle', wet: 0.6, delay: d });
+    this.tone(70, 0.5, 0.6, { to: 38, wet: 0.3 });
+    this.burst('highpass', 2500, 0.08, 0.5, 0.7, 0.4);
+  }
+
+  /** The limo's own motor: bigger, lower, slower lope than yours. level 0..1, speed in m/s. */
+  limo(level, speed) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    if (!this.limoGain) {
+      const ctx = this.ctx;
+      this.limoGain = this.gain(0);
+      this.limoFilter = this.filter('lowpass', 300, 3);
+      this.limoOsc = [ctx.createOscillator(), ctx.createOscillator()];
+      this.limoOsc[0].type = 'sawtooth';
+      this.limoOsc[1].type = 'square';
+      const lopeAmp = this.gain(0.5);
+      this.limoLope = ctx.createOscillator();
+      this.limoLope.connect(this.gain(0.5)).connect(lopeAmp.gain);
+      for (const o of this.limoOsc) { o.connect(this.limoFilter); o.start(); }
+      this.limoLope.start();
+      this.limoPan = ctx.createStereoPanner();
+      this.limoFilter.connect(lopeAmp).connect(this.limoGain).connect(this.limoPan).connect(this.master);
+      this.limoGain.connect(this.gain(0.3)).connect(this.verbIn);
+    }
+    const f = 19 + Math.min(1, speed / 50) * 45;
+    this.limoOsc[0].frequency.setTargetAtTime(f, t, 0.1);
+    this.limoOsc[1].frequency.setTargetAtTime(f * 0.5, t, 0.1);
+    this.limoLope.frequency.setTargetAtTime(f * 0.2, t, 0.1);
+    this.limoFilter.frequency.setTargetAtTime(140 + speed * 9, t, 0.1);
+    this.limoGain.gain.setTargetAtTime(level * 0.22, t, 0.4);
+  }
+
+  /** Which side the limo is on (-1 left .. 1 right). */
+  limoSide(pan) { if (this.limoPan) this.limoPan.pan.setTargetAtTime(pan, this.ctx.currentTime, 0.2); }
+
   launch(charge) {
     if (!this.ctx) return;
     this.burst('highpass', 3000, 0.12 + charge * 0.1, 0.25, 0.7, 0.1);   // pssht

@@ -210,6 +210,7 @@ export class Hood {
         this.state = 'flying';
         this.spin = new THREE.Vector3(Math.random() - 0.5, 0, 1).multiplyScalar(8);
         out.shot = true;
+        this.airT = 0;
       }
     } else if (this.state === 'flying' || this.state === 'falling') {
       this.vel.y -= GRAVITY * dt;
@@ -219,13 +220,51 @@ export class Hood {
       if (this.state === 'flying' && this.vel.y < 0 && b.position.y < this.rim.y + 1) {
         const off = Math.hypot(b.position.x - this.rim.x, b.position.z - this.rim.z);
         if (off < 3.3 - BALL_R * 0.35) { out.swish = true; this.vel.set(0, -6, 0); }
-        else if (off < 3.3 + BALL_R) { out.miss = 'rim'; this.vel.set((b.position.x - this.rim.x) * 2, 7, (b.position.z - this.rim.z) * 2); }
-        else out.miss = 'air';
+        else if (off < 3.3 + BALL_R + 1.5) {
+          // close: it hits the iron and hops up, and might still fall through
+          out.rim = true;
+          this.rattle = Math.random() < 0.5;
+          const k = this.rattle ? 0.4 : 1.6;
+          this.vel.set((b.position.x - this.rim.x) * -k * (this.rattle ? 1 : -1), 9, (b.position.z - this.rim.z) * -k * (this.rattle ? 1 : -1));
+          this.state = 'rimmed';
+        } else out.miss = 'air';
+        if (this.state === 'flying') this.state = 'falling';
+      }
+      if (this.state === 'rimmed' && this.vel.y < 0 && b.position.y < this.rim.y + 0.5) {
+        if (this.rattle) { out.swish = true; out.rattle = true; b.position.x = this.rim.x; b.position.z = this.rim.z; this.vel.set(0, -4, 0); }
+        else out.miss = 'rim';
         this.state = 'falling';
       }
-      if (b.position.y < this.rim.y - 60) this.state = 'done';
+      // down on the ground it bounces, lower each time, and rolls off into the dark
+      const floor = this.rim.y - 22 + BALL_R;
+      if (b.position.y < floor) {
+        b.position.y = floor;
+        if (Math.abs(this.vel.y) > 2.5) { out.bounce = Math.min(1, Math.abs(this.vel.y) / 25); this.vel.y = -this.vel.y * 0.62; this.vel.x *= 0.8; this.vel.z *= 0.8; }
+        else { this.vel.y = 0; this.vel.x *= Math.exp(-dt * 0.8); this.vel.z *= Math.exp(-dt * 0.8); }
+        this.spin.multiplyScalar(0.9);
+      }
+      this.airT = (this.airT || 0) + dt;
+      if (this.airT > 11 || (this.vel.y === 0 && Math.hypot(this.vel.x, this.vel.z) < 0.6)) this.state = 'done';
     }
     return out;
+  }
+
+  /** Is the ball in the air (or still bouncing)? main follows it with a camera. */
+  get live() { return this.state === 'flying' || this.state === 'rimmed' || this.state === 'falling'; }
+
+  /** A camera off to the side of the hoop, watching the ball come down. */
+  watch(cam, dt) {
+    const b = this.ball.position;
+    const away = new THREE.Vector3(this.ballHome.x - this.rim.x, 0, this.ballHome.z - this.rim.z).normalize();
+    const side = new THREE.Vector3(-away.z, 0, away.x);
+    const want = this.rim.clone().addScaledVector(away, 34).addScaledVector(side, 18);
+    want.y = this.rim.y - 8;
+    if (!this.camPos) this.camPos = want.clone();
+    this.camPos.lerp(want, Math.min(1, dt * 2));
+    cam.position.copy(this.camPos);
+    this.camLook = (this.camLook || b.clone()).lerp(b.clone().lerp(this.rim, 0.25), Math.min(1, dt * 5));
+    cam.lookAt(this.camLook);
+    cam.fov += (50 - cam.fov) * Math.min(1, dt * 2);
   }
 
   reset() {

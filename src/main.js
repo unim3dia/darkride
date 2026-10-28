@@ -51,6 +51,44 @@ const { renderer, scene, camera, composer, post, trails, bloom } = createRendere
 
 // highway signs live on their own: always lit, flickering a little, never tied to a town that unloads
 const ROAD_SIGNS = [];
+/** A solid highway board: dark plate, white border, filled bold letters, a big arrow. Reads in any fog. */
+function plateTexture(top, bottom) {
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 256;
+  const g = c.getContext('2d');
+  g.fillStyle = '#062a1c';
+  g.fillRect(0, 0, 512, 256);
+  g.strokeStyle = '#f4f4ec';
+  g.lineWidth = 8;
+  g.strokeRect(10, 10, 492, 236);
+  g.fillStyle = '#ffffff';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.font = '700 84px "Syncopate", sans-serif';
+  g.fillText(top, 256, 92, 470);
+  g.fillStyle = '#ffd84a';
+  g.font = '700 46px "IBM Plex Mono", monospace';
+  g.fillText(bottom, 256, 190, 470);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}
+
+function plateSign(top, bottom, pos, yaw) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(13, 6.5), new THREE.MeshBasicMaterial({ map: plateTexture(top, bottom), color: new THREE.Color(0.85, 0.85, 0.85), fog: false, toneMapped: false }));
+  m.position.copy(pos);
+  m.rotation.y = yaw;
+  scene.add(m);
+  // the gantry: a beam across the road it hangs from, two posts at the edges
+  const steel = new THREE.MeshStandardMaterial({ color: 0x2a2c30, metalness: 0.6, roughness: 0.5 });
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(2 * ROAD.HALF_WIDTH + 6, 0.4, 0.4), steel);
+  beam.position.set(0, 2.7, -0.3);
+  m.add(beam);
+  for (const x of [-ROAD.HALF_WIDTH - 3, ROAD.HALF_WIDTH + 3]) { const post = new THREE.Mesh(new THREE.BoxGeometry(0.35, 10, 0.35), steel); post.position.set(x, -2.3, -0.3); m.add(post); }
+}
+
 function roadSign(top, bottom, pos, yaw, colors) {
   const mat = new THREE.MeshBasicMaterial({ map: neonTexture(top, bottom, colors), color: new THREE.Color(0.95, 0.95, 0.95), transparent: true, depthWrite: false, fog: false });
   const m = new THREE.Mesh(new THREE.PlaneGeometry(8.4, 4.2), mat);
@@ -130,7 +168,7 @@ function warpSpots() {
   });
   // the drive-in, nosed toward the screen; the middle of the Narrows
   spots.push({ name: 'drive-in', go: () => { const p = district.toWorld(LOT.u1 - 30, LOT.aisleV); vehicle.placeAt(p.x, 0, p.z, -district.yawToward(-1, 0), 4); } });
-  for (const [n, pl, u] of [['wash', wash, 0.4], ['drive-thru', drive, 0.38], ['mud', mud, 0.2], ['jumps', jumps, 0.16]]) spots.push({ name: n, go: () => { const p = pl.spur.sample(pl.tAt(u)); vehicle.placeAt(p.x, p.y + 0.4, p.z, p.heading, 18); } });
+  for (const [n, pl, u] of [['wash', wash, 0.4], ['drive-thru', drive, 0.3], ['mud', mud, 0.2], ['jumps', jumps, 0.16]]) spots.push({ name: n, go: () => { const p = pl.spur.sample(pl.tAt(u)); vehicle.placeAt(p.x, p.y + 0.4, p.z, p.heading, 18); } });
   spots.push({ name: 'block', go: () => { const p = hood.spur.sample(hood.spur.N * 0.3); vehicle.placeAt(p.x, p.y + 0.4, p.z, p.heading, 16); } });
   spots.push({ name: 'logs', go: () => vehicle.reset(logJam.s0 - 160, 0, 0, 22) });
   spots.push({ name: 'narrows', go: () => vehicle.reset(narrows.s0, 0, 0, 16) });
@@ -146,12 +184,34 @@ const HERD_GREY = new THREE.Color();
 
 const raceShot = (camera, v, dt) => { if (!race.shot(camera, v, dt)) rig.cine = null; };
 
+/**
+ * The limo's motor: only when it's close, and only now and then — a few seconds
+ * of it growling past, then it drops back under your own engine.
+ */
+function limoSound(dt) {
+  const R = race.rival;
+  let level = 0;
+  if (race.active && R) {
+    const d = vehicle.pos.distanceTo(R.mesh.position);
+    const L = state.limo || (state.limo = { on: 0, next: 2 });
+    L.next -= dt;
+    if (L.next < 0) { L.on = L.on ? 0 : 1; L.next = L.on ? 3 + Math.random() * 4 : 4 + Math.random() * 8; }
+    const near = Math.max(0, 1 - d / 45);
+    level = near * (race.phase === 'countdown' ? 0.6 : L.on);
+    const f = vehicle.forward;
+    const dx = R.mesh.position.x - vehicle.pos.x, dz = R.mesh.position.z - vehicle.pos.z;
+    audio.limoSide(Math.max(-1, Math.min(1, (dx * -f.z + dz * f.x) / Math.max(4, d))));
+  }
+  audio.limo(level, R ? R.v : 0);
+}
+
 /** The circuit: through the gate, the countdown, laps, the result, and home. */
 function raceFrame(dt) {
   const rr = race.update(dt, vehicle);
   if (rr.enter) screens.showCard('THE CIRCUIT', 'one long lap · the limo beside you');
-  if (rr.lamp) audio.tone(392, 0.12, 0.35, { wet: 0.4 });
-  if (rr.go) audio.tone(784, 0.16, 0.8, { wet: 0.5 });
+  if (rr.lamp) audio.countdown(rr.lamp);
+  if (rr.go) audio.raceGo();
+  limoSound(dt);
   if (rr.card) screens.showCard(rr.card[0], rr.card[1]);
   if (rr.bump) { audio.bump(4 * rr.bump); rig.shake(0.15 * rr.bump); }
   if (rr.finish) audio.tone(rr.finish === 'win' ? 587 : 196, 0.14, 1.6, { wet: 0.7 });
@@ -235,7 +295,8 @@ function sidesFrame(dt) {
     audio.wash(true);
   }
   state.washHue = wo.take ? wo.hue : null;
-  if (wo.end) { audio.wash(false); rig.view = state.washPrevView ?? 0; rig.offset = undefined; screens.showCard('CLEAN', 'drive safe'); }
+  if (wo.end) { audio.wash(false); screens.showCard('CLEAN', 'drive yourself out'); }
+  if (wo.out) { rig.view = state.washPrevView ?? 0; rig.offset = undefined; }
   // the drive-thru
   const dr = drive.update(dt, state.time, vehicle);
   if (dr.speak) { audio.drivethru(); screens.showCard('…welcome to burger night…', 'may i take your… order'); }
@@ -245,12 +306,15 @@ function sidesFrame(dt) {
   const mo = mud.update(dt, state.time, vehicle, rig.name);
   mo.splats.forEach((sp, i) => post.uSplat.value[i].set(sp.x, sp.y, sp.r, sp.a));
   if (mo.hit) audio.bump(3);
+  if (mo.land) { emitPulse(vehicle.pos.x, vehicle.pos.z, 0.9, 60); audio.mud(1); audio.bump(6); }
   audio.mud(mo.mud ? Math.min(1, vehicle.speed / 25) : 0);
   // the jumps
   const jo = jumps.update(dt, state.time, vehicle);
   if (jo.through) { audio.tone(880, 0.12, 0.9, { wet: 0.7 }); audio.tone(1320, 0.08, 1.1, { wet: 0.8, delay: 0.08 }); }
   if (jo.air && jo.air > 1.4) screens.showCard(`${jo.air.toFixed(1)} s`, 'of air');
 }
+
+const ballCam = (cam, v, dt) => hood.watch(cam, dt);
 
 /** Into the car wash: the camera flies forward through the back glass and settles in the driver's seat. */
 const washCam = (cam, v, dt) => {
@@ -430,8 +494,8 @@ const race = new Race(scene, rng(5150));
 vehicle.spurs.push(race.track);
 for (const dist of [1200, 900, 600, 300, 120]) {
   const A = sample(race.track.sA - dist);
-  const v = new THREE.Vector3(A.x - A.nx * (ROAD.HALF_WIDTH + 4), A.y + 6.4, A.z - A.nz * (ROAD.HALF_WIDTH + 4));
-  roadSign('THE RACE', `${dist} m · ← exit left`, v, Math.atan2(-A.tx, -A.tz), [0xe8f0ff, 0x7fd8ff]);
+  const v = new THREE.Vector3(A.x - A.nx * 2.5, A.y + 8, A.z - A.nz * 2.5); // hung over the left lane, gantry-style
+  plateSign('← THE RACE', `${dist} m · exit left`, v, Math.atan2(-A.tx, -A.tz));
 }
 const atmos = new Atmos(scene);
 const stampede = new Stampede(scene);
@@ -463,6 +527,7 @@ for (const dist of [400, 200]) {
 // the new places: rest stop + car wash, the drive-thru, the mud flats, the jumps
 const wash = new CarWash(scene);
 const drive = new DriveThru(scene);
+vehicle.pads.push(drive.pad);
 const mud = new Mud(scene);
 const jumps = new Jumps(scene);
 // across the Pines highway: a spilled load of logs to jump and rattle over
@@ -844,6 +909,11 @@ function tick(now) {
   if (hev.swish) { audio.tone(523.25, 0.12, 1.2, { wet: 0.7 }); audio.tone(659.25, 0.1, 1.4, { wet: 0.7, delay: 0.12 }); audio.tone(783.99, 0.1, 1.8, { wet: 0.8, delay: 0.24 }); screens.showCard('SWISH', 'from downtown'); }
   if (hev.miss === 'rim') { audio.tone(220, 0.2, 0.6, { type: 'triangle', to: 180, wet: 0.6 }); screens.showCard('OFF THE RIM', 'so close'); }
   if (hev.miss === 'air') screens.showCard('AIRBALL', 'the block saw that');
+  if (hev.rim) audio.tone(260, 0.22, 0.5, { type: 'triangle', to: 200, wet: 0.6 });
+  if (hev.bounce) { audio.tone(70, 0.4 * hev.bounce, 0.35, { to: 45, wet: 0.5 }); audio.burst('lowpass', 500, 0.15 * hev.bounce, 0.15, 1, 0.4); }
+  // watch the ball: a camera by the hoop until it's down and still (any key-held view comes back after)
+  if (hev.shot && !rig.cine) { hood.camPos = null; hood.camLook = null; rig.cine = ballCam; }
+  if (rig.cine === ballCam && !hood.live) rig.cine = null;
   sidesFrame(dt);
   audio.stampede(herd.w, herd.near, herd.intensity || 0, herd.score ? herd.score.vortex : 0);
   if (herd.w > 0.5 && !state.herdShown) { state.herdShown = true; screens.showCard('THE CHARGE', 'they were running long before the road'); }
@@ -949,7 +1019,7 @@ function tick(now) {
     post.uEcho.value = fx ? fx.echo * w : 0;
     post.uSoft.value = fx ? fx.soft * w : 0;
     // inside the car wash, light through coloured soap
-    if (state.washHue != null) { post.uWashAmt.value = 0.38; post.uWash.value.setHSL(state.washHue, 0.85, 0.62); post.uEcho.value = 0.15; }
+    if (state.washHue != null) { /* the colour is on the glass and the tunnel lamps, never the cabin */ }
     if (fx) trails.uniforms.damp.value += (fx.trails - trails.uniforms.damp.value) * w;
     bloom.strength = 0.7 + (fx ? (fx.bloom - 0.7) * w : 0);
   }

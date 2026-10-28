@@ -50,6 +50,8 @@ export class Vehicle {
     this.street = { contains: () => false };
     this.spurs = [];       // off-ramps (set by the game)
     this.spurHit = null;
+    this.pads = [];        // flat lots off the road: { height(x, z) → y or -Infinity }
+    this.onPad = false;
     this.prevGround = NaN;
     this.prevGV = 0;
   }
@@ -140,7 +142,10 @@ export class Vehicle {
       if (h && Math.abs(h.d) < HW + 0.8 && above(h.y) && this.pos.y < h.y + 12 && (!spurHit || h.y > spurHit.y)) spurHit = h;
     }
     const ramp = spurHit ? spurHit.y : -Infinity;
-    const ground = Math.max(street, deck, ramp);
+    let pad = -Infinity;
+    for (const pd of this.pads) { const y = pd.height(this.pos.x, this.pos.z); if (y > pad && above(y)) pad = y; }
+    this.onPad = Number.isFinite(pad);
+    const ground = Math.max(street, deck, ramp, pad);
     this.spurHit = spurHit;
     // out on a ramp, the loop position follows the ramp so the world streams around you
     if (spurHit && !onRoadPlan) this.s = spurHit.spur.ringS(spurHit.t);
@@ -209,7 +214,7 @@ export class Vehicle {
         }
       }
     }
-    this.onRoad = (onRoadPlan && this.pos.y > deckY - 1.5) || !!spurHit;
+    this.onRoad = (onRoadPlan && this.pos.y > deckY - 1.5) || !!spurHit || this.onPad;
     this.offDeck = !Number.isFinite(ground) && this.pos.y < (spurHit ? spurHit.y : deckY) - 6;
 
     this.updateSprings(dt);

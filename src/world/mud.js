@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { MUD } from './track.js';
 import { SidePlace } from './sidePlace.js';
 import { spurRibbon } from './spur.js';
+import { pulseMat } from '../render/pulseMaterial.js';
 
 const P = {};
 const CLODS = 900;
@@ -15,19 +16,19 @@ function mudTexture() {
   c.width = 256;
   c.height = 512;
   const g = c.getContext('2d');
-  // near-black, wet: brown only where it's thick, the rest a sheet of water holding the dark sky
-  g.fillStyle = '#0b0806';
+  // light brown, churned: darker where it's thick and wet (the first stretch is darkened per vertex)
+  g.fillStyle = '#8a6440';
   g.fillRect(0, 0, 256, 512);
   for (let i = 0; i < 220; i++) {
     const x = Math.random() * 256, y = Math.random() * 512, r = 6 + Math.random() * 40;
     const gr = g.createRadialGradient(x, y, 0, x, y, r);
-    gr.addColorStop(0, `rgba(${30 + Math.random() * 22},${18 + Math.random() * 12},${8 + Math.random() * 6},${0.25 + Math.random() * 0.35})`);
+    gr.addColorStop(0, Math.random() < 0.6 ? `rgba(${50 + Math.random() * 30},${32 + Math.random() * 16},${16 + Math.random() * 8},${0.35 + Math.random() * 0.4})` : `rgba(${150 + Math.random() * 30},${115 + Math.random() * 20},${75 + Math.random() * 15},${0.2 + Math.random() * 0.3})`);
     gr.addColorStop(1, 'rgba(0,0,0,0)');
     g.fillStyle = gr;
     g.fillRect(x - r, y - r, r * 2, r * 2);
   }
   // ruts: two dark grooves where everyone's tyres went
-  g.fillStyle = 'rgba(2,1,1,0.55)';
+  g.fillStyle = 'rgba(40,24,12,0.5)';
   for (const x of [82, 174]) g.fillRect(x - 10, 0, 20, 512);
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
@@ -48,7 +49,9 @@ export class Mud extends SidePlace {
     const tex = mudTexture();
     const pos = [];
     const uv = [];
+    const col = [];
     const A = {}, B = {};
+    const shade = (t) => 0.16 + 2.4 * THREE.MathUtils.smoothstep(t, this.tM0 + 25, this.tM0 + 70);
     for (let t = this.tM0; t < this.tM1; t += 3) {
       sp.sample(t, A); sp.sample(t + 3, B);
       const row = (Q, v) => {
@@ -56,24 +59,28 @@ export class Mud extends SidePlace {
         for (let k = 0; k <= 12; k++) {
           const d = -this.half - 6 + (k / 12) * (this.half + 6) * 2;
           const lump = 0.18 * Math.sin(d * 1.3 + t * 0.21) + 0.12 * Math.sin(t * 0.7 + d * 0.4);
-          pts.push([Q.x + Q.nx * d, Q.y + 0.08 + lump * (Math.abs(d) > 3 ? 1.6 : 0.6), Q.z + Q.nz * d, k / 12, v]);
+          pts.push([Q.x + Q.nx * d, Q.y + 0.08 + lump * (Math.abs(d) > 3 ? 1.6 : 0.6), Q.z + Q.nz * d, k / 12, v, shade(Q === A ? t : t + 3)]);
         }
         return pts;
       };
       const ra = row(A, t / 24), rb = row(B, (t + 3) / 24);
       for (let k = 0; k < 12; k++) {
         const q = [ra[k], rb[k], rb[k + 1], ra[k], rb[k + 1], ra[k + 1]];
-        for (const p of q) { pos.push(p[0], p[1], p[2]); uv.push(p[3], p[4]); }
+        for (const p of q) { pos.push(p[0], p[1], p[2]); uv.push(p[3], p[4]); col.push(p[5], p[5] * 0.95, p[5] * 0.9); }
       }
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
     geo.computeVertexNormals();
-    this.group.add(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.12, metalness: 0.15, envMapIntensity: 1.6 })));
+    this.group.add(new THREE.Mesh(geo, pulseMat({ map: tex, vertexColors: true, roughness: 0.3, metalness: 0.05, envMapIntensity: 1.2 })));
     // berms either side, dark and heaped
     for (const s of [-1, 1]) this.group.add(new THREE.Mesh(spurRibbon(sp, this.tM0, this.tM1, s * (this.half + 5), s * (this.half + 14), 1.6, -2, 6), new THREE.MeshStandardMaterial({ color: 0x1a120b, roughness: 1 })));
     this.buildClods();
+    // a low warm light rides with you over the mud so the brown actually shows at night
+    this.glow = new THREE.PointLight(0xffc890, 0, 40, 1.3);
+    this.group.add(this.glow);
     this.splats = Array.from({ length: 8 }, () => ({ x: 0, y: 0, r: 0, a: 0 }));
   }
 
@@ -128,6 +135,12 @@ export class Mud extends SidePlace {
     const h = this.hit(vehicle);
     this.w += (this.weightAt(h) - this.w) * Math.min(1, dt * 2);
     const out = { w: this.w, mud: this.inMud(h) && !vehicle.airborne };
+    const lit = this.inMud(h) ? THREE.MathUtils.smoothstep(h.t, this.tM0 + 25, this.tM0 + 70) * (1 - THREE.MathUtils.smoothstep(h.t, this.tM1 - 30, this.tM1)) : 0;
+    this.glow.intensity += (lit * 60 - this.glow.intensity) * Math.min(1, dt * 2);
+    this.glow.position.set(vehicle.pos.x + vehicle.forward.x * 8, vehicle.pos.y + 7, vehicle.pos.z + vehicle.forward.z * 8);
+    // land in it and it goes everywhere at once
+    if (out.mud && this.wasAir) { this.fling(vehicle, 260); out.land = true; }
+    this.wasAir = vehicle.airborne && this.inMud(h);
     if (out.mud) {
       // the mud drags at you a little and squirms the tail
       vehicle.vel.multiplyScalar(Math.exp(-dt * 0.12));

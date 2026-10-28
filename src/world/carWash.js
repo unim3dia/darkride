@@ -158,35 +158,91 @@ export class CarWash extends SidePlace {
       this.group.add(l);
       this.lamps.push(l);
     }
-    // suds: soft white blobs that cling to the glass and slide down
-    const sc = document.createElement('canvas');
-    sc.width = sc.height = 64;
-    const sg = sc.getContext('2d');
-    for (let i = 0; i < 14; i++) {
-      const x = 12 + Math.random() * 40, y = 12 + Math.random() * 40, r = 6 + Math.random() * 12;
-      const gr = sg.createRadialGradient(x, y, 0, x, y, r);
-      gr.addColorStop(0, 'rgba(255,255,255,0.95)'); gr.addColorStop(0.7, 'rgba(240,245,255,0.6)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
-      sg.fillStyle = gr; sg.beginPath(); sg.arc(x, y, r, 0, 7); sg.fill();
-    }
-    this.sudsTex = new THREE.CanvasTexture(sc);
-    this.suds = [];
+    this.glass = null;
   }
 
-  /** Foam on the car: sprites stuck to the body's glass, sliding as they go. */
-  soap(carBody, n) {
-    for (let i = 0; i < n && this.suds.length < 44; i++) {
-      const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.sudsTex, color: new THREE.Color().setHSL(Math.random(), 0.5, 0.92), transparent: true, opacity: 0.95, depthWrite: false }));
-      const onScreen = Math.random() < 0.6;
-      // windshield (z -1.15..-0.48, y 1.02..1.48) or the hood and roof
-      const x = (Math.random() - 0.5) * 1.5;
-      const z = onScreen ? -0.65 - Math.random() * 0.45 : (Math.random() - 0.5) * 4;
-      const y = onScreen ? 1.05 + (z + 1.15) * 0.687 : 1.5; // on the windshield's slope, or up on the roof
-      m.position.set(x, y, z);
-      const s = 0.12 + Math.random() * 0.26;
-      m.scale.set(s, s, 1);
-      m.userData = { life: 6 + Math.random() * 6, slide: 0.03 + Math.random() * 0.05 };
+  /**
+   * The soap lives on the outside of the glass: one canvas over the windshield,
+   * one over the driver's window, each a hair outside the pane. The wash paints
+   * them — foam, colour, water — and afterwards it all runs off.
+   */
+  buildGlass(carBody) {
+    const pane = (pts, uvs, push) => {
+      const c = document.createElement('canvas');
+      c.width = c.height = 256;
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const geo = new THREE.BufferGeometry();
+      const pos = [], uv = [];
+      for (const i of [0, 1, 2, 0, 2, 3]) { pos.push(pts[i][0] + push[0], pts[i][1] + push[1], pts[i][2] + push[2]); uv.push(...uvs[i]); }
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
+      m.renderOrder = 5;
+      m.frustumCulled = false;
       carBody.add(m);
-      this.suds.push(m);
+      return { c, g: c.getContext('2d'), tex, m };
+    };
+    // windshield: pushed out along its normal (up and forward)
+    const ws = pane([[-0.8, 1.02, -1.15], [0.8, 1.02, -1.15], [0.78, 1.48, -0.48], [-0.78, 1.48, -0.48]], [[0, 0], [1, 0], [1, 1], [0, 1]], [0, 0.03, -0.045]);
+    // driver's window (left side): the front pane, mapped by z along, y up
+    const zy = [[-1.12, 1.02], [0.1, 1.02], [0.1, 1.47], [-0.5, 1.47]];
+    const left = pane(zy.map(([z, y]) => [-0.84, y, z]), zy.map(([z, y]) => [(z + 1.12) / 1.22, (y - 1.02) / 0.45]), [-0.035, 0, 0]);
+    this.glass = [ws, left];
+  }
+
+  /** Throw soap at the glass: foam blooms, coloured swirls, sheets of water, drips. */
+  paint(time, dt, k) {
+    for (const p of this.glass) {
+      const g = p.g;
+      // everything runs down: shift the canvas a touch and let it thin out
+      g.globalCompositeOperation = 'copy';
+      g.globalAlpha = 1 - dt * (this.state === 'in' ? 0.25 : 0.5);
+      g.drawImage(p.c, 0, -Math.max(1, dt * 30));
+      g.globalAlpha = 1;
+      g.globalCompositeOperation = 'source-over';
+      if (this.state !== 'in' || k < 0.04 || k > 0.92) { p.tex.needsUpdate = true; continue; }
+      const hue = (time * 40) % 360;
+      const n = Math.random() < dt * 30 ? 1 + Math.floor(Math.random() * 3) : 0;
+      for (let i = 0; i < n; i++) {
+        const x = Math.random() * 256, y = Math.random() * 256;
+        const kind = Math.random();
+        if (kind < 0.45) {
+          // a foam bloom: clustered bubbles, near-white with a tint
+          for (let j = 0; j < 10; j++) {
+            const bx = x + (Math.random() - 0.5) * 60, by = y + (Math.random() - 0.5) * 40, r = 4 + Math.random() * 20;
+            const gr = g.createRadialGradient(bx, by, 0, bx, by, r);
+            gr.addColorStop(0, `hsla(${hue + Math.random() * 60},60%,95%,0.95)`);
+            gr.addColorStop(0.75, `hsla(${hue},70%,85%,0.6)`);
+            gr.addColorStop(1, 'hsla(0,0%,100%,0)');
+            g.fillStyle = gr;
+            g.beginPath(); g.arc(bx, by, r, 0, 7); g.fill();
+          }
+        } else if (kind < 0.75) {
+          // a swirl of coloured soap, like a brush dragged through it
+          g.strokeStyle = `hsla(${hue + Math.random() * 120},95%,${50 + Math.random() * 25}%,0.75)`;
+          g.lineWidth = 6 + Math.random() * 22;
+          g.lineCap = 'round';
+          g.beginPath();
+          const r = 20 + Math.random() * 70, a0 = Math.random() * 6.28;
+          g.arc(x, y, r, a0, a0 + 1 + Math.random() * 3.5);
+          g.stroke();
+        } else if (kind < 0.9) {
+          // a sheet of water: a wide pale smear that cuts through the foam
+          g.globalCompositeOperation = 'destination-out';
+          g.fillStyle = 'rgba(0,0,0,0.5)';
+          g.fillRect(x - 60, y - 10, 120 + Math.random() * 60, 14 + Math.random() * 20);
+          g.globalCompositeOperation = 'source-over';
+          g.fillStyle = `hsla(${hue + 180},80%,80%,0.25)`;
+          g.fillRect(x - 60, y - 4, 140, 6);
+        } else {
+          // drips: thin coloured runs
+          g.strokeStyle = `hsla(${hue + 40},90%,70%,0.8)`;
+          g.lineWidth = 2 + Math.random() * 4;
+          g.beginPath(); g.moveTo(x, y); g.lineTo(x + (Math.random() - 0.5) * 6, y - 40 - Math.random() * 90); g.stroke();
+        }
+      }
+      p.tex.needsUpdate = true;
     }
   }
 
@@ -196,6 +252,7 @@ export class CarWash extends SidePlace {
    */
   update(dt, time, vehicle, carBody) {
     const out = {};
+    if (!this.glass) this.buildGlass(carBody);
     const h = this.hit(vehicle);
     this.w += (this.weightAt(h) - this.w) * Math.min(1, dt * 2);
     this.light.intensity = 30 * (Math.sin(time * 37) > 0.93 ? 0.4 : 1);
@@ -210,7 +267,7 @@ export class CarWash extends SidePlace {
     if (this.state === 'in' && h) {
       this.t += dt;
       out.take = true;
-      const tt = Math.min(this.tB + 6, h.t + CRAWL * dt);
+      const tt = h.t + CRAWL * dt;
       const q = this.spur.sample(tt, P);
       // the conveyor has you: centred, pointing down the tunnel, at a crawl
       vehicle.pos.x += (q.x - vehicle.pos.x) * Math.min(1, dt * 3);
@@ -225,19 +282,13 @@ export class CarWash extends SidePlace {
         this.lamps[i].intensity = 18;
       }
       out.hue = (time * 0.08) % 1;
-      if (k > 0.05 && k < 0.85 && Math.random() < dt * 8) this.soap(carBody, 1);
-      if (h.t >= this.tB + 4) { this.state = 'done'; out.end = true; }
+      // the conveyor lets go before the exit: you're stopped under the roof and drive yourself out
+      if (h.t >= this.tB - 6) { this.state = 'done'; vehicle.vel.set(0, 0, 0); out.end = true; }
     }
-    // the foam slides down and fades once it's had its time
-    for (let i = this.suds.length - 1; i >= 0; i--) {
-      const m = this.suds[i];
-      m.userData.life -= dt * (this.state === 'in' ? 1 : 3);
-      m.position.y -= m.userData.slide * dt;
-      m.material.opacity = Math.min(0.95, m.userData.life / 2);
-      if (m.userData.life <= 0) { m.parent.remove(m); m.material.dispose(); this.suds.splice(i, 1); }
-    }
+    this.paint(time, dt, out.progress ?? 1);
     if (this.state !== 'in') for (const l of this.lamps) l.intensity *= Math.exp(-dt * 2);
-    if (this.state === 'done' && !h) this.state = 'idle';
+    if (this.state === 'done' && h && h.t > this.tB + 3 && !this.outSaid) { this.outSaid = true; out.out = true; }
+    if (this.state === 'done' && !h) { this.state = 'idle'; this.outSaid = false; }
     return out;
   }
 }

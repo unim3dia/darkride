@@ -13,6 +13,55 @@ const TAIL = 24;         // thinning out back to the road
 const WALL_H = 1.55;
 const BED_H = 0.95;
 
+/** Bark marbled with char: brown grain shot through with black veins and burnt patches. */
+function barkTexture() {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 256;
+  const g = c.getContext('2d');
+  g.fillStyle = '#6b4a30';
+  g.fillRect(0, 0, 256, 256);
+  // the grain runs along the trunk (u goes round, v along)
+  for (let i = 0; i < 160; i++) {
+    const x = Math.random() * 256;
+    g.strokeStyle = `rgba(${20 + Math.random() * 40},${12 + Math.random() * 20},${6 + Math.random() * 10},${0.3 + Math.random() * 0.5})`;
+    g.lineWidth = 1 + Math.random() * 4;
+    g.beginPath();
+    g.moveTo(x, 0);
+    for (let y = 0; y <= 256; y += 16) g.lineTo(x + Math.sin(y * 0.05 + i) * 6 + (Math.random() - 0.5) * 4, y);
+    g.stroke();
+  }
+  // marbling: black veins that wander and fork
+  for (let i = 0; i < 26; i++) {
+    let x = Math.random() * 256, y = Math.random() * 256, a = Math.random() * 6.28;
+    g.strokeStyle = `rgba(4,3,2,${0.5 + Math.random() * 0.45})`;
+    g.lineWidth = 1.5 + Math.random() * 5;
+    g.beginPath();
+    g.moveTo(x, y);
+    for (let k = 0; k < 30; k++) { a += (Math.random() - 0.5) * 0.9; x += Math.cos(a) * 7; y += Math.sin(a) * 7; g.lineTo(x, y); }
+    g.stroke();
+  }
+  // charred patches: soft black blooms with a faint ember edge
+  for (let i = 0; i < 14; i++) {
+    const x = Math.random() * 256, y = Math.random() * 256, r = 14 + Math.random() * 46;
+    const gr = g.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, 'rgba(2,2,2,0.95)');
+    gr.addColorStop(0.7, 'rgba(8,5,3,0.7)');
+    gr.addColorStop(0.9, 'rgba(70,22,6,0.25)');
+    gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr;
+    g.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(1, 3);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+// each log is a different wood: pale brown, dark bark, near-black, burnt through
+const TONES = [[1.15, 1, 0.9], [0.75, 0.62, 0.55], [0.4, 0.36, 0.34], [0.22, 0.2, 0.2], [1, 0.85, 0.75]];
+
 /** Find a long gap-free stretch in the middle of the Pines, clear of every exit. */
 function pickSpot(avoid) {
   const pines = [];
@@ -32,12 +81,12 @@ export class LogJam {
     this.s0 = pickSpot(avoid);
     this.group = new THREE.Group();
     scene.add(this.group);
-    const bark = new THREE.MeshStandardMaterial({ color: 0x8a6444, roughness: 0.8, emissive: 0x1a0e06 });
+    const bark = new THREE.MeshStandardMaterial({ color: 0xc0a088, map: barkTexture(), roughness: 0.85, emissive: 0x0c0604 });
     const geo = new THREE.CylinderGeometry(0.34, 0.38, ROAD.HALF_WIDTH * 2 + 1.6, 9, 1).rotateZ(Math.PI / 2);
     // the pale cut ends
     const ends = geo.attributes.position;
     const col = [];
-    for (let i = 0; i < ends.count; i++) { const cap = Math.abs(ends.getX(i)) > ROAD.HALF_WIDTH; col.push(...(cap ? [2.6, 2.0, 1.3] : [1, 1, 1])); }
+    for (let i = 0; i < ends.count; i++) { const cap = Math.abs(ends.getX(i)) > ROAD.HALF_WIDTH; col.push(...(cap ? [1.9, 1.35, 0.85] : [1, 1, 1])); }
     geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
     bark.vertexColors = true;
     this.logs = [];
@@ -54,6 +103,8 @@ export class LogJam {
     }
     this.mesh = new THREE.InstancedMesh(geo, bark, this.logs.length);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    const tint = new THREE.Color();
+    this.logs.forEach((L, i) => { const k = TONES[Math.floor(Math.random() * TONES.length)]; this.mesh.setColorAt(i, tint.setRGB(k[0], k[1], k[2])); });
     this.group.add(this.mesh);
     this.place(0);
     // where it came from: a jackknifed trailer on the shoulder
