@@ -29,6 +29,15 @@ export class SidePlace {
   buildRoad(mat, t0 = this.spur.tSepA, t1 = this.spur.tSepB, half = this.half) {
     const m = new THREE.Mesh(spurRibbon(this.spur, t0, t1, -half, half, 0.05, -1.2, 3), mat);
     this.group.add(m);
+    // where the exit still runs alongside the deck, lay road there too so the ramp actually
+    // meets the highway; it sits just behind the deck where the two overlap
+    const sp = this.spur;
+    if (!this.apron) {
+      this.apron = mat.clone();
+      Object.assign(this.apron, { polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 4 });
+    }
+    if (t0 <= sp.tSepA + 0.5) this.group.add(new THREE.Mesh(spurRibbon(sp, 0, t0 + 3, -half, half, 0.03, -1.0, 3), this.apron));
+    if (t1 >= sp.tSepB - 0.5) this.group.add(new THREE.Mesh(spurRibbon(sp, t1 - 3, sp.N - 1.5, -half, half, 0.03, -1.0, 3), this.apron));
     return m;
   }
 

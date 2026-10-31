@@ -46,11 +46,11 @@ export class RaceTrack extends Spur {
 
 // ---------------------------------------------------------------- the set
 
-function ribbon(track, d0, d1, y0, y1, step = 3, uvs = null) {
+function ribbon(track, d0, d1, y0, y1, step = 3, uvs = null, from = track.t0, to = track.t1) {
   const pos = [];
   const A = {};
   const B = {};
-  for (let t = track.t0; t < track.t1; t += step) {
+  for (let t = from; t < to; t += step) {
     track.sample(t, A);
     track.sample(t + step, B);
     const c = (p, d, y) => [p.x + p.nx * d, p.y + y, p.z + p.nz * d];
@@ -181,6 +181,13 @@ function buildSet(track, scene, r) {
   // edges drawn in light: the one thing that's always certain
   const line = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.9, 2.2, 2.6), fog: false });
   for (const s of [-1, 1]) group.add(new THREE.Mesh(ribbon(track, s * (HW + 0.5) - 0.07, s * (HW + 0.5) + 0.07, 0.07, 0.07, 2), line));
+  // where it leaves and rejoins the ring: plain asphalt so there's always road under you,
+  // tucked just behind the highway's own deck where they overlap, and the outer edge line carried on to guide you in
+  const apron = new THREE.MeshStandardMaterial({ color: 0x1b1c1f, roughness: 0.75, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 4 });
+  for (const [a, b] of [[0, track.t0 + 3], [track.t1 - 3, track.N - 1.5]]) {
+    group.add(new THREE.Mesh(ribbon(track, -HW - 0.8, HW + 0.8, 0.02, 0.02, 3, null, a, b), apron));
+    group.add(new THREE.Mesh(ribbon(track, -(HW + 0.5) - 0.07, -(HW + 0.5) + 0.07, 0.07, 0.07, 2, null, a, b), line));
+  }
   // a dashed line down the middle, softly lit, counting off the speed
   const dashes = [];
   const A = {};
@@ -480,13 +487,15 @@ export class Race {
       }
     }
     if (this.phase === 'racing') {
+      this.lapTime = this.t;
       const done = this.playerDist >= T.tFinish;
       const rivalDone = R.dist >= T.tFinish;
       if (done || rivalDone) {
         this.result = done && (!rivalDone || this.playerDist - T.tFinish > R.dist - T.tFinish) ? 'win' : 'lose';
         this.phase = 'finished';
         this.t = 0;
-        out.card = this.result === 'win' ? ['FIRST', 'the city opens its eyes for you'] : ['SECOND', 'the rival fades into the pale'];
+        const m = Math.floor(this.lapTime / 60), sec = (this.lapTime % 60).toFixed(2).padStart(5, '0');
+        out.card = [`${m}:${sec}`, this.result === 'win' ? 'first · the city opens its eyes for you' : 'second · the rival fades into the pale'];
         out.finish = this.result;
       }
     }

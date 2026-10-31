@@ -540,6 +540,10 @@ function raceChevrons() {
   // and down the exit itself
   const T = race.track;
   for (let t = 4; t < Math.min(T.tGrid - 20, 160); t += 10) { const P = T.sample(t); put(P.x, P.y, P.z, P.tx, P.tz); }
+  // after the finish: arrows down the last stretch and on into the ring, under a board that says where you're going
+  for (let t = T.tSepB - 90; t < T.N - 8; t += 10) { const P = T.sample(t); put(P.x, P.y, P.z, P.tx, P.tz); }
+  const P = T.sample(T.tSepB - 110);
+  plateSign('RING ROAD →', 'merge right · ahead', new THREE.Vector3(P.x, P.y + 8, P.z), Math.atan2(-P.tx, -P.tz), 1.2);
 }
 const atmos = new Atmos(scene);
 const stampede = new Stampede(scene);
@@ -616,6 +620,7 @@ function markMouths(spur, name, color) {
 }
 // the new places: rest stop + car wash, the drive-thru, the mud flats, the jumps
 const wash = new CarWash(scene);
+markMouths(wash.spur, 'REST STOP', new THREE.Color(0.5, 2.2, 1.6));
 const drive = new DriveThru(scene);
 vehicle.pads.push(drive.pad);
 const mud = new Mud(scene);
