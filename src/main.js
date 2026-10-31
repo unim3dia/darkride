@@ -563,10 +563,56 @@ const hood = new Hood(scene, rng(7777));
 vehicle.spurs.push(hood.spur);
 hoodRef = hood;
 raceRef = { near: (x, z) => { const b = race.track.box; if (x < b.minX - 150 || x > b.maxX + 150 || z < b.minZ - 150 || z > b.maxZ + 150) return false; return race.track.distance(x, z) < 120; } };
-for (const dist of [400, 200]) {
-  const A = sample(hood.spur.sA - dist);
-  const v = new THREE.Vector3(A.x - A.nx * (ROAD.HALF_WIDTH + 4), A.y + 6.4, A.z - A.nz * (ROAD.HALF_WIDTH + 4));
-  roadSign('THE BLOCK', `${dist} m · ← one shot`, v, Math.atan2(-A.tx, -A.tz), [0xffa860, 0xe8d2a8]);
+markMouths(hood.spur, 'THE BLOCK', new THREE.Color(2.6, 1.25, 0.35));
+
+/**
+ * Make an exit impossible to miss from either way round the ring: two big gantry
+ * boards on the approach, glowing arrows across the road into the mouth and down
+ * it, and a pair of lit pillars standing at the mouth itself. Done at both ends.
+ */
+function markMouths(spur, name, color) {
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 1.6); shape.lineTo(1.6, -0.4); shape.lineTo(1.0, -0.9); shape.lineTo(0, 0.4); shape.lineTo(-1.0, -0.9); shape.lineTo(-1.6, -0.4); shape.closePath();
+  const geo = new THREE.ShapeGeometry(shape).rotateX(-Math.PI / 2);
+  const mat = new THREE.MeshBasicMaterial({ color, toneMapped: false, fog: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4 });
+  const glow = new THREE.MeshBasicMaterial({ color, toneMapped: false, fog: false });
+  const put = (x, y, z, hx, hz) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y + 0.06, z); m.rotation.y = Math.atan2(hx, hz) + Math.PI; scene.add(m); };
+  const side = spur.side ?? -1;
+  // dir +1: driving round the ring forwards to the first mouth; -1: coming the other way to the second
+  for (const [s0, dir] of [[spur.sA, 1], [spur.sB, -1]]) {
+    const arrow = side * dir < 0 ? '←' : '→';
+    for (const [dist, scale] of [[450, 1], [160, 1.5]]) {
+      const A = sample(s0 - dir * dist);
+      const off = side * 2.5;
+      const v = new THREE.Vector3(A.x + A.nx * off, A.y + 8 + (scale - 1) * 3, A.z + A.nz * off);
+      const top = arrow === '←' ? `${arrow} ${name}` : `${name} ${arrow}`;
+      plateSign(top, dist > 200 ? `${dist} m · exit ${arrow === '←' ? 'left' : 'right'}` : 'FOLLOW THE ARROWS', v, Math.atan2(-A.tx * dir, -A.tz * dir), scale);
+    }
+    // arrows drifting from the middle of the road over to the edge the exit leaves from
+    for (let k = 140; k >= 0; k -= 10) {
+      const A = sample(s0 - dir * k);
+      const d = side * (1 - k / 140) * (ROAD.HALF_WIDTH - 1.5);
+      put(A.x + A.nx * d, A.y, A.z + A.nz * d, A.tx * dir, A.tz * dir);
+    }
+    // and on into the mouth
+    for (let k = 0; k < 8; k++) {
+      const t = dir > 0 ? 6 + k * 10 : spur.N - 7 - k * 10;
+      const P = spur.sample(t);
+      put(P.x, P.y, P.z, P.tx * dir, P.tz * dir);
+    }
+    // lit pillars either side of the mouth, tall enough to see over anything
+    const t = dir > 0 ? spur.tSepA + 4 : spur.tSepB - 4;
+    const P = spur.sample(t);
+    for (const d of [-1, 1]) {
+      const w = (ROAD.HALF_WIDTH + 1.2) * d;
+      const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.7, 14, 0.7), glow);
+      pillar.position.set(P.x + P.nx * w, P.y + 7, P.z + P.nz * w);
+      scene.add(pillar);
+    }
+    const lamp = new THREE.PointLight(color.clone().multiplyScalar(0.4), 30, 60, 1.5);
+    lamp.position.set(P.x, P.y + 10, P.z);
+    scene.add(lamp);
+  }
 }
 // the new places: rest stop + car wash, the drive-thru, the mud flats, the jumps
 const wash = new CarWash(scene);

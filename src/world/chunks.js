@@ -125,12 +125,16 @@ function monoliths(a, b, r, bins, eyeSpots, avoid) {
   for (let i = 0; i < n; i++) {
     const side = r() < 0.5 ? -1 : 1;
     const near = r() < 0.3;
-    const off = side * (near ? 18 + r() * 20 : 40 + r() * 170);
-    const p = roadPoint(a + r() * (b - a), off, 0);
-    if (avoid(p.x, p.z)) continue;
+    let off = side * (near ? 18 + r() * 20 : 40 + r() * 170);
+    const at = a + r() * (b - a);
     const tall = r() < 0.45;
     const w = tall ? 5 + r() * 9 : 18 + r() * 44;
     const d = tall ? 5 + r() * 9 : 8 + r() * 30;
+    // however it's turned, keep the whole slab off the deck and clear of the signs on the shoulder
+    const reach = Math.hypot(w, d) / 2 + HW + 9;
+    if (Math.abs(off) < reach) off = side * reach;
+    const p = roadPoint(at, off, 0);
+    if (avoid(p.x, p.z)) continue;
     const h = tall ? 70 + r() * 110 : 10 + r() * 34;
     const g = new THREE.BoxGeometry(w, h, d).rotateY(r() * Math.PI);
     if (r() < 0.14) g.rotateZ((r() - 0.5) * 0.22); // leaning, as if settling

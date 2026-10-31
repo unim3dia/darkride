@@ -219,7 +219,11 @@ export function chunkFeatures(index) {
   for (let i = 0; i < nWrecks; i++) {
     const at = s0 + 4 + r() * (CHUNK_LEN - 8);
     if (f.gap && at > f.gap.start - 6 && at < f.gap.end + 6) continue;
-    f.wrecks.push({ s: at, d: (r() * 2 - 1) * (ROAD.HALF_WIDTH - 2.2), yaw: (r() - 0.5) * 1.2 });
+    const d = (r() * 2 - 1) * (ROAD.HALF_WIDTH - 2.2);
+    const yaw = (r() - 0.5) * 1.2;
+    // a thinner road: at most one car a chunk, and only in about two chunks in five (the dice still roll so nothing else moves)
+    if (i > 0 || idx % 5 > 1) continue;
+    f.wrecks.push({ s: at, d, yaw });
   }
 
   if (!home && r() < 0.42) {
