@@ -12,6 +12,7 @@ import { Mist } from './world/mist.js';
 import { FogLayers } from './world/fogLayers.js';
 import { gapAt, zoneIndexAt, sample, rng, project } from './world/track.js';
 import { District } from './world/district.js';
+import { Home } from './world/home.js';
 import { Narrows } from './world/narrows.js';
 import { LOOP_LEN } from './world/track.js';
 import { Answerers } from './world/answerers.js';
@@ -141,6 +142,7 @@ const reflections = new Reflections(renderer, scene);
 reflections.set(ZONES[0]);
 // the street-level places on the ring: the Underpass at home, the Narrows across the loop
 const district = new District(scene);
+const home = new Home(scene, district);
 const narrows = new Narrows(scene, { s0: LOOP_LEN / 2 });
 const places = [district, narrows];
 const placeAt = (x, z, margin = 0) => places.find((p) => p.inside(x, z, margin));
@@ -324,6 +326,7 @@ function sidesFrame(dt) {
   if (wo.out) { rig.view = state.washPrevView ?? 0; rig.offset = undefined; }
   // the drive-thru
   const dr = drive.update(dt, state.time, vehicle);
+  if (dr.speak || dr.static) state.ordered = true;
   if (dr.speak) { audio.drivethru(); screens.showCard('…welcome to burger night…', 'may i take your… order'); }
   if (dr.served) screens.showCard('thank you', 'please drive… forward');
   if (dr.static) { audio.burst('bandpass', 2500, 0.12, 2.5, 0.6, 0.3); screens.showCard('…', 'only static'); }
@@ -421,7 +424,15 @@ const state = {
   timeScale: 1,
   fall: null,
   aberration: 0,
+  // what the night asks of you before you can go home
+  ordered: false,
+  bigJumps: 0,
+  seenZones: new Set(),
 };
+if (new URLSearchParams(location.search).has('home')) { state.ordered = true; state.bigJumps = 9; state.passengers = 6; ZONES.forEach((_, i) => state.seenZones.add(i)); }
+
+/** The whole night: round the ring, the burger menu, a few real jumps, a car full of watchers. */
+const nightDone = () => state.ordered && state.bigJumps >= 3 && state.passengers >= 3 && state.seenZones.size >= ZONES.length - 1;
 
 chunks.onSpawn = (c) => {
   watchers.spawn(c);
@@ -724,6 +735,64 @@ try {
   }
 } catch { /* no audio here; the title is silent */ }
 
+// ---------------------------------------------------------------- going home
+
+/** The hearts, the door, and once you're in: the ending. */
+function homeFrame(dt, raw) {
+  const ready = nightDone();
+  const E = state.ending;
+  const shut = E ? THREE.MathUtils.smoothstep(E.t, 1.4, 3.4) : 0;
+  const ho = home.update(dt, state.time, vehicle, ready, shut);
+  if (ready && !state.homeShown && district.inside(vehicle.pos.x, vehicle.pos.z, 120)) {
+    state.homeShown = true;
+    screens.showCard('THE WAY HOME', 'follow the hearts');
+  }
+  if (ho.opening && !state.doorSound) { state.doorSound = true; audio.burst('bandpass', 180, 0.5, 2.2, 0.35, 0.2); }
+  if (!ho.opening) state.doorSound = false;
+  if (ho.inside && !E) beginEnding();
+  if (!E) return;
+  E.t += raw;
+  vehicle.vel.multiplyScalar(Math.exp(-dt * 2.2)); // it rolls in and stops
+  if (E.t > 1.4 && !E.clang) { E.clang = true; audio.burst('lowpass', 140, 0.6, 2.2, 0.3, 0.2); }
+  if (E.t > 3.4 && !E.shut) { E.shut = true; audio.bump(5); rig.shake(0.05); }
+  if (E.t > 10.5 && !E.title) { E.title = true; showEndTitle(); }
+}
+
+function beginEnding() {
+  state.ending = { t: 0 };
+  for (const id of ['hint', 'zone']) { const el = document.getElementById(id); if (el) el.style.opacity = '0'; }
+  const from = home.watchPoint();
+  const at = home.doorPoint();
+  const out = from.clone().sub(at).setY(0).normalize();
+  rig.cine = (cam) => {
+    const t = state.ending.t;
+    // hold on the door while it comes down, then lift away: back and up, slow at first
+    const k = THREE.MathUtils.smoothstep(t, 3.6, 10.5);
+    const e = k * k * (3 - 2 * k);
+    cam.position.copy(from).addScaledVector(out, e * 120).setY(from.y + e * 85);
+    cam.fov = 44 + e * 6;
+    cam.lookAt(at.x, at.y + e * 6, at.z);
+  };
+  audio.menu?.(false);
+}
+
+/** Down through the grain to black: the picture goes, the grain stays a moment longer. */
+function endingLight() {
+  const k = THREE.MathUtils.smoothstep(state.ending.t, 6.5, 10.5);
+  renderer.toneMappingExposure *= 1 - k * 0.985;
+  post.uFade.value = THREE.MathUtils.smoothstep(state.ending.t, 9.5, 14) * 0.9;
+  if (audio.master && audio.ctx) audio.master.gain.setTargetAtTime(0.9 * (1 - k * 0.8), audio.ctx.currentTime, 0.5);
+}
+
+function showEndTitle() {
+  state.mode = 'end';
+  const el = document.createElement('section');
+  el.className = 'overlay end-title';
+  el.innerHTML = '<h1>DARK<span>RIDE</span></h1>';
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('show'));
+}
+
 // ---------------------------------------------------------------- events → feel
 
 function onSlam(slam) {
@@ -737,6 +806,7 @@ function onSlam(slam) {
     screens.hopped();
     return;
   }
+  if (slam.airTime > 0.9) state.bigJumps++;
   const radius = PULSE.BASE_RADIUS + slam.impact * PULSE.IMPACT_RADIUS * (0.6 + 0.4 * slam.clean);
   emitPulse(slam.x, slam.z, 0.55 + slam.strength * 0.7, radius);
   rig.shake(0.18 + slam.strength * 0.45);
@@ -941,12 +1011,13 @@ function tick(now) {
 
   const rr = state.mode === 'ride' ? raceFrame(dt) : {};
   unstick(dt, input, rr);
-  const riding = state.mode === 'ride' && !state.fall && !rr.hold && !state.washTake;
+  const riding = state.mode === 'ride' && !state.fall && !rr.hold && !state.washTake && !state.ending;
   const drive = riding ? input : { throttle: 0, brake: 0, steer: 0, hopHeld: false, hopPressed: false };
   if (rr.hold) vehicle.vel.multiplyScalar(Math.exp(-dt * 3.5)); // you roll to a stop on the line
   const ev = physics(dt, drive);
   frameEvents(ev);
 
+  homeFrame(dt, raw);
   if (riding && vehicle.offDeck) state.fall = { t: 0, s: vehicle.s, reset: false };
   if (state.fall) updateFall(raw);
 
@@ -1036,6 +1107,7 @@ function tick(now) {
   catchUniforms.uSrc.value.copy(vehicle.pos).addScaledVector(catchUniforms.uDir.value, 2.9).y += 0.8;
 
   const z = zoneIndexAt(vehicle.s);
+  if (state.mode === 'ride' && !vehicle.spurHit) state.seenZones.add(z);
   if (z !== state.zone && state.mode === 'ride' && !pk.pocket && pk.cave < 0.01 && !race.active && stampede.w < 0.05 && !(state.hoodW > 0.05)) {
     state.zone = z;
     screens.showZone(z);
@@ -1060,6 +1132,7 @@ function tick(now) {
   audio.movie(film.level, film.roar, film.hit);
   fogLayers.update(state.time, camera, vehicle.groundY, scene.fog.color, ambient.fogThick, inTown);
   renderer.toneMappingExposure += (ambient.exposure * 1.05 - renderer.toneMappingExposure) * Math.min(1, raw);
+  if (state.ending) endingLight();
   const rainHere = ambient.rain * (1 - (state.cave || 0));
   rain.update(dt, camera.position, vehicle.vel, rainHere);
   carView.inside = (rig.name === 'cabin' && !rig.cine) || (rig.cine === washCam && state.washCam && state.washCam.t > 1.8);
@@ -1147,7 +1220,7 @@ function tick(now) {
 }
 
 // expose a tiny handle for debugging in the console
-window.__darkride = { vehicle, state, chunks, rig, ROAD, particles, watchers, carView, scene, renderer, district, narrows, places, answerers, emitPulse, ambient, forks, audio, warmStart, race, movie, stampede, herdRoad, atmos, hood, wash, drive, mud, jumps, logJam, herdRoad, spots: () => (WARPS = WARPS || warpSpots()) };
+window.__darkride = { vehicle, state, chunks, rig, ROAD, particles, watchers, carView, scene, renderer, district, narrows, places, answerers, emitPulse, ambient, forks, audio, warmStart, race, movie, stampede, herdRoad, atmos, hood, wash, drive, mud, jumps, logJam, home, spots: () => (WARPS = WARPS || warpSpots()) };
 if (TEST) import('./core/testkit.js').then((m) => m.installTestKit(window.__darkride));
 if (new URLSearchParams(location.search).has('reel')) import('./core/reel.js').then((m) => m.installReel(window.__darkride));
 // the landing light belongs to the whole world: any plain surface that isn't already

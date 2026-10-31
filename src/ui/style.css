@@ -250,3 +250,7 @@ body.touch .hint { display: none; }
 .map-close { position: fixed; bottom: 18px; left: 0; right: 0; text-align: center; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.3em; color: var(--bone-dim); }
 
 .t-ride { grid-area: ride; justify-self: start; }
+
+/* the end: the title comes back up out of the black */
+.end-title { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; pointer-events: none; opacity: 0; transition: opacity 3.5s ease; }
+.end-title.show { opacity: 1; }
