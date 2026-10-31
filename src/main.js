@@ -52,6 +52,7 @@ const { renderer, scene, camera, composer, post, trails, bloom } = createRendere
 
 // highway signs live on their own: always lit, flickering a little, never tied to a town that unloads
 const ROAD_SIGNS = [];
+const FLICKERS = []; // road arrows that drop out for a beat every so often
 /** A solid highway board: dark plate, white border, filled bold letters, a big arrow. Reads in any fog. */
 function plateTexture(top, bottom) {
   const c = document.createElement('canvas');
@@ -308,7 +309,7 @@ function sidesFrame(dt) {
   for (const pl of sidesRef) {
     const h = pl.hit(vehicle);
     pl.clamp(vehicle, h, dt);
-    if (pl.w > 0.01 && !ambient.pocket) ambient.pocket = { weight: pl.w, palette: SIDE_PALETTES.get(pl) };
+    if (pl.w > 0.01 && !ambient.pocket) ambient.pocket = { weight: pl.w, palette: pl === mud ? mudPalette(mud.lit || 0) : SIDE_PALETTES.get(pl) };
     if (h && pl.w > 0.6 && !pl.shown) { pl.shown = true; screens.showCard(pl.name, pl.sub); }
     if (!h) pl.shown = false;
   }
@@ -591,7 +592,11 @@ function markMouths(spur, name, color, dists = [450, 160]) {
   const geo = new THREE.ShapeGeometry(shape).rotateX(-Math.PI / 2);
   const mat = new THREE.MeshBasicMaterial({ color, toneMapped: false, fog: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4 });
   const glow = new THREE.MeshBasicMaterial({ color, toneMapped: false, fog: false });
-  const put = (x, y, z, hx, hz) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y + 0.06, z); m.rotation.y = Math.atan2(hx, hz) + Math.PI; scene.add(m); };
+  // a couple in every run blink out now and then, like tubes about to go
+  const weak = [mat.clone(), mat.clone()];
+  weak.forEach((m, i) => { m.transparent = true; FLICKERS.push({ m, seed: i * 3.7 + Math.random() * 10 }); });
+  let n = 0;
+  const put = (x, y, z, hx, hz) => { const k = n++ % 5; const m = new THREE.Mesh(geo, k === 1 ? weak[0] : k === 3 ? weak[1] : mat); m.position.set(x, y + 0.06, z); m.rotation.y = Math.atan2(hx, hz) + Math.PI; scene.add(m); };
   const side = spur.side ?? -1;
   // dir +1: driving round the ring forwards to the first mouth; -1: coming the other way to the second
   for (const [s0, dir] of [[spur.sA, 1], [spur.sB, -1]]) {
@@ -605,14 +610,14 @@ function markMouths(spur, name, color, dists = [450, 160]) {
       plateSign(top, dist > 200 ? `${dist} m · exit ${arrow === '←' ? 'left' : 'right'}` : 'FOLLOW THE ARROWS', v, Math.atan2(-A.tx * dir, -A.tz * dir), scale);
     }
     // arrows drifting from the middle of the road over to the edge the exit leaves from
-    for (let k = 140; k >= 0; k -= 10) {
+    for (let k = 140; k >= 0; k -= 14) {
       const A = sample(s0 - dir * k);
       const d = side * (1 - k / 140) * (ROAD.HALF_WIDTH - 1.5);
       put(A.x + A.nx * d, A.y, A.z + A.nz * d, A.tx * dir, A.tz * dir);
     }
     // and on into the mouth
-    for (let k = 0; k < 8; k++) {
-      const t = dir > 0 ? 6 + k * 10 : spur.N - 7 - k * 10;
+    for (let k = 0; k < 6; k++) {
+      const t = dir > 0 ? 6 + k * 14 : spur.N - 7 - k * 14;
       const P = spur.sample(t);
       put(P.x, P.y, P.z, P.tx * dir, P.tz * dir);
     }
@@ -637,7 +642,6 @@ const drive = new DriveThru(scene);
 vehicle.pads.push(drive.pad);
 markMouths(drive.spur, 'DRIVE THRU', new THREE.Color(2.8, 1.5, 0.3));
 const mud = new Mud(scene);
-markMouths(mud.spur, 'MUD FLATS', new THREE.Color(2.4, 1.5, 0.7), [900, 450, 160]);
 const jumps = new Jumps(scene);
 // across the Pines highway: a spilled load of logs to jump and rattle over
 const logJam = new LogJam(scene, [HERD, RACE, HOOD, WASH, DRIVE, MUD, JUMPS].map((e) => e.sA ?? e.at * LOOP_LEN));
@@ -648,9 +652,9 @@ for (const dist of [400, 200, 80]) {
   roadSign('LOGS ON ROAD', `${dist} m · jump it`, v, Math.atan2(-A.tx, -A.tz), [0xffd27a, 0xd8a868]);
 }
 const sides = [wash, drive, mud, jumps];
-for (const sp of sides) vehicle.spurs.push(sp.spur);
+for (const sp of sides) if (sp !== mud) vehicle.spurs.push(sp.spur);
 sidesRef = sides;
-const SIDE_SIGNS = [[wash, 'REST STOP', 'gas · car wash →'], [drive, 'BURGER NIGHT', 'drive-thru →'], [mud, 'THE MUD FLATS', '← floor it'], [jumps, 'THE JUMPS', 'big air →']];
+const SIDE_SIGNS = [[wash, 'REST STOP', 'gas · car wash →'], [drive, 'BURGER NIGHT', 'drive-thru →'], [mud, 'THE MUD FLATS', 'ahead · floor it'], [jumps, 'THE JUMPS', 'big air →']];
 for (const [pl, title, sub] of SIDE_SIGNS) {
   for (const dist of [400, 200]) {
     const A = sample(pl.spur.sA - dist);
@@ -665,6 +669,20 @@ const SIDE_PALETTES = new Map([
   [mud, { fog: 0x1a1410, skyTop: 0x030202, skyHorizon: 0x22190f, glow: 0x30241a, light: 0.22, exposure: 0.95, fogMul: 1.0, grain: 1.5, rain: 0.45 }],
   [jumps, { fog: 0x0a1220, skyTop: 0x02040a, skyHorizon: 0x14243c, glow: 0x2a4a7a, light: 0.3, exposure: 1.0, fogMul: 0.7, grain: 1.4, rain: 0 }],
 ]);
+// the mud flats are a journey: in through the dark and the rain, out into a wide pale-brown
+// day where the rain has stopped and you can see every clod you throw, then back into the dark
+const MUD_DARK = SIDE_PALETTES.get(mud);
+const MUD_DAY = { fog: 0x7a6248, skyTop: 0x4a4038, skyHorizon: 0x8c7458, glow: 0xa88c6c, light: 0.75, exposure: 1.12, fogMul: 1.6, grain: 1.2, rain: 0 };
+const mixHex = (a, b, k) => new THREE.Color(a).lerp(new THREE.Color(b), k).getHex();
+const MUD_MIX = {};
+function mudPalette(k) {
+  for (const key of Object.keys(MUD_DAY)) {
+    MUD_MIX[key] = typeof MUD_DAY[key] === 'number' && key !== 'light' && key !== 'exposure' && key !== 'fogMul' && key !== 'grain' && key !== 'rain'
+      ? mixHex(MUD_DARK[key], MUD_DAY[key], k)
+      : MUD_DARK[key] + (MUD_DAY[key] - MUD_DARK[key]) * k;
+  }
+  return MUD_MIX;
+}
 // almost no light: the street lives on its windows
 const HOOD_PALETTE = { fog: 0x1a1714, skyTop: 0x050506, skyHorizon: 0x221d18, glow: 0x2c241c, light: 0.16, exposure: 0.95, fogMul: 0.9, grain: 1.5, rain: 0.2 };
 // the herd's road can be taken from either end; both are marked
@@ -699,6 +717,7 @@ window.addEventListener('pointerdown', startRide);
 // the map: type M-A-P any time. It shows the whole course, drawn from the game itself,
 // with you on it; the ride holds still until a tap or Esc brings you back
 const mapView = document.getElementById('map');
+let mapOpenedAt = 0;
 function openMap() {
   // off the ring, name the place you're in rather than the stretch of ring beside it
   const side = vehicle.spurHit && sidesRef.find((pl) => pl.hit(vehicle));
@@ -716,6 +735,7 @@ function openMap() {
   cv.getContext('2d').drawImage(src, 0, 0);
   mapView.hidden = false;
   state.mapOpen = true;
+  mapOpenedAt = performance.now();
 }
 function closeMap(e) {
   if (!state.mapOpen) return;
@@ -724,7 +744,8 @@ function closeMap(e) {
   setTimeout(() => { state.mapOpen = false; }, 50);
 }
 mapView.addEventListener('pointerdown', closeMap);
-window.addEventListener('keydown', (e) => { if (state.mapOpen) { e.stopImmediatePropagation(); if (e.code === 'Escape') closeMap(e); } }, true);
+window.addEventListener('keydown', (e) => { if (state.mapOpen) { e.stopImmediatePropagation(); if (performance.now() - mapOpenedAt > 250) closeMap(e); } }, true);
+window.addEventListener('pointerdown', (e) => { if (state.mapOpen) closeMap(e); }, true);
 // some browsers let a page make sound straight away; if this one does, the beat is already playing
 try {
   audio.start();
@@ -752,7 +773,7 @@ function homeFrame(dt, raw) {
   }
   // and coming back down into the Underpass: the whole place lights up once, and the hearts come on
   if (ho.arrive) {
-    screens.showCard('WELCOME HOME', 'the night is done · follow the hearts');
+    screens.showCard('WELCOME HOME', 'the night is done · the watchers will show you the way');
     emitPulse(vehicle.pos.x, vehicle.pos.z, 1.5, 520);
     emitPulse(vehicle.pos.x, vehicle.pos.z, 0.8, 260);
     if (audio.ctx) [147, 220, 294, 370, 440].forEach((f, i) => audio.tone(f, 0.09, 7, { wet: 0.9, delay: i * 0.22 }));
@@ -1146,7 +1167,7 @@ function tick(now) {
   fogLayers.update(state.time, camera, vehicle.groundY, scene.fog.color, ambient.fogThick, inTown);
   renderer.toneMappingExposure += (ambient.exposure * 1.05 - renderer.toneMappingExposure) * Math.min(1, raw);
   if (state.ending) endingLight();
-  const rainHere = ambient.rain * (1 - (state.cave || 0));
+  const rainHere = ambient.rain * (1 - (state.cave || 0)) * (1 - (mud.lit || 0)); // out on the open mud the rain has stopped
   rain.update(dt, camera.position, vehicle.vel, rainHere);
   carView.inside = (rig.name === 'cabin' && !rig.cine) || (rig.cine === washCam && state.washCam && state.washCam.t > 1.8);
   carView.sync(vehicle, state.time, dt);
@@ -1164,6 +1185,11 @@ function tick(now) {
   state.aberration *= Math.exp(-raw * 4);
   post.uAberration.value = state.aberration + (vehicle.airborne ? 0.08 : 0);
   post.uTime.value = state.time;
+  for (const f of FLICKERS) {
+    // mostly on; every few seconds off for a moment, with a stutter coming back
+    const c = (state.time * 0.23 + f.seed) % 1;
+    f.m.opacity = c < 0.1 ? (Math.sin(state.time * 50 + f.seed) > 0.3 ? 0.6 : 0) : 1;
+  }
   for (const sg of ROAD_SIGNS) {
     const flick = Math.sin(state.time * 23 + sg.seed) > -0.9 ? 1 : 0.4;
     const dx = vehicle.pos.x - sg.pos.x, dz = vehicle.pos.z - sg.pos.z;

@@ -13,7 +13,7 @@ export class SidePlace {
    */
   constructor(scene, def, opts) {
     this.def = def;
-    this.spur = def.raw ? new Spur(def) : new Spur(def);
+    this.spur = def.ring ? null : new Spur(def); // a stretch of the ring brings its own
     this.opts = opts;
     this.name = opts.name;
     this.sub = opts.sub;

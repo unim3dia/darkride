@@ -3,7 +3,8 @@
 // back at you. Sometimes a clod hits the lens and you drive half-blind until it
 // runs off.
 import * as THREE from 'three';
-import { MUD } from './track.js';
+import { MUD, sample, wrap, LOOP_LEN } from './track.js';
+import { ROAD } from '../config.js';
 import { SidePlace } from './sidePlace.js';
 import { spurRibbon } from './spur.js';
 import { pulseMat } from '../render/pulseMaterial.js';
@@ -36,22 +37,43 @@ function mudTexture() {
   return t;
 }
 
+/**
+ * A stretch of the ring dressed up as a road of its own: the same few calls a
+ * Spur answers (sample, at, tAt's U table, near), measured in metres from s0.
+ */
+class RingStretch {
+  constructor(s0, len) {
+    this.sA = s0; this.sB = s0 + len; this.N = len;
+    this.U = Float32Array.from({ length: len + 1 }, (_, i) => i / len);
+    this.tSepA = 0; this.tSepB = len - 1;
+    this.openings = [];
+    const b = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity };
+    for (let t = 0; t <= len; t += 10) { const q = sample(s0 + t); b.minX = Math.min(b.minX, q.x); b.maxX = Math.max(b.maxX, q.x); b.minZ = Math.min(b.minZ, q.z); b.maxZ = Math.max(b.maxZ, q.z); }
+    this.box = b;
+  }
+  sample(t, out = {}) { sample(this.sA + Math.min(this.N, Math.max(0, t)), out); out.u = t / this.N; return out; }
+  at(t, d, y = 0, out = new THREE.Vector3()) { const q = this.sample(t); return out.set(q.x + q.nx * d, q.y + y, q.z + q.nz * d); }
+  ringS(t) { return this.sA + t; }
+  distance(x, z) {
+    let best = Infinity;
+    for (let t = 0; t <= this.N; t += 10) { const q = sample(this.sA + t); best = Math.min(best, Math.hypot(q.x - x, q.z - z)); }
+    return best;
+  }
+}
+
 export class Mud extends SidePlace {
   constructor(scene) {
-    super(scene, MUD, { name: 'THE MUD FLATS', sub: 'floor it', mapSub: 'floor it', color: '#b07a4a', halfWidth: 12 });
+    super(scene, MUD, { name: 'THE MUD FLATS', sub: 'floor it', mapSub: 'floor it', color: '#b07a4a', halfWidth: ROAD.HALF_WIDTH - 4.6 });
+    this.spur = new RingStretch(MUD.sA, MUD.len);
     const sp = this.spur;
-    this.tM0 = this.tAt(0.14);
-    this.tM1 = this.tAt(0.86);
-    // asphalt at either end, mud in the middle
-    const asphalt = new THREE.MeshStandardMaterial({ color: 0x17181a, roughness: 0.7 });
-    this.buildRoad(asphalt, sp.tSepA, this.tM0 + 6, 7);
-    this.buildRoad(asphalt, this.tM1 - 6, sp.tSepB, 7);
+    this.tM0 = this.tAt(0.05);
+    this.tM1 = this.tAt(0.95);
     const tex = mudTexture();
     const pos = [];
     const uv = [];
     const col = [];
     const A = {}, B = {};
-    const shade = (t) => 0.16 + 2.4 * THREE.MathUtils.smoothstep(t, this.tM0 + 25, this.tM0 + 70);
+    const shade = (t) => 0.16 + 0.8 * THREE.MathUtils.smoothstep(t, this.tM0 + 25, this.tM0 + 70) * (1 - THREE.MathUtils.smoothstep(t, this.tM1 - 60, this.tM1 - 10));
     for (let t = this.tM0; t < this.tM1; t += 3) {
       sp.sample(t, A); sp.sample(t + 3, B);
       const row = (Q, v) => {
@@ -59,7 +81,7 @@ export class Mud extends SidePlace {
         for (let k = 0; k <= 12; k++) {
           const d = -this.half - 6 + (k / 12) * (this.half + 6) * 2;
           const lump = 0.18 * Math.sin(d * 1.3 + t * 0.21) + 0.12 * Math.sin(t * 0.7 + d * 0.4);
-          pts.push([Q.x + Q.nx * d, Q.y + 0.08 + lump * (Math.abs(d) > 3 ? 1.6 : 0.6), Q.z + Q.nz * d, k / 12, v, shade(Q === A ? t : t + 3)]);
+          pts.push([Q.x + Q.nx * d, Q.y + 0.3 + lump * (Math.abs(d) > 3 ? 1.2 : 0.5), Q.z + Q.nz * d, k / 12, v, shade(Q === A ? t : t + 3)]);
         }
         return pts;
       };
@@ -74,9 +96,7 @@ export class Mud extends SidePlace {
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
     geo.computeVertexNormals();
-    this.group.add(new THREE.Mesh(geo, pulseMat({ map: tex, vertexColors: true, roughness: 0.3, metalness: 0.05, envMapIntensity: 1.2 })));
-    // berms either side, dark and heaped
-    for (const s of [-1, 1]) this.group.add(new THREE.Mesh(spurRibbon(sp, this.tM0, this.tM1, s * (this.half + 5), s * (this.half + 14), 1.6, -2, 6), new THREE.MeshStandardMaterial({ color: 0x1a120b, roughness: 1 })));
+    this.group.add(new THREE.Mesh(geo, pulseMat({ map: tex, vertexColors: true, roughness: 0.3, metalness: 0.05, envMapIntensity: 1.2, side: THREE.DoubleSide })));
     this.buildClods();
     // a low warm light rides with you over the mud so the brown actually shows at night
     this.glow = new THREE.PointLight(0xffc890, 0, 40, 1.3);
@@ -108,6 +128,16 @@ export class Mud extends SidePlace {
 
   inMud(h) { return !!h && h.t > this.tM0 && h.t < this.tM1; }
 
+  /** On the ring, inside the stretch: where along it you are. */
+  hit(vehicle) {
+    if (vehicle.spurHit) return null;
+    const k = wrap(vehicle.s - this.spur.sA + LOOP_LEN / 2) - LOOP_LEN / 2;
+    if (k < 0 || k > this.spur.N || Math.abs(vehicle.d) > ROAD.HALF_WIDTH + 2) return null;
+    return { t: k, d: vehicle.d };
+  }
+
+  clamp() {} // the ring's own barriers hold you here
+
   /** Throw mud off the wheels: rearward and up mostly, sideways on turns, and at you. */
   fling(vehicle, n) {
     const f = vehicle.forward;
@@ -136,6 +166,7 @@ export class Mud extends SidePlace {
     this.w += (this.weightAt(h) - this.w) * Math.min(1, dt * 2);
     const out = { w: this.w, mud: this.inMud(h) && !vehicle.airborne };
     const lit = this.inMud(h) ? THREE.MathUtils.smoothstep(h.t, this.tM0 + 25, this.tM0 + 70) * (1 - THREE.MathUtils.smoothstep(h.t, this.tM1 - 30, this.tM1)) : 0;
+    this.lit = lit;
     this.glow.intensity += (lit * 60 - this.glow.intensity) * Math.min(1, dt * 2);
     this.glow.position.set(vehicle.pos.x + vehicle.forward.x * 8, vehicle.pos.y + 7, vehicle.pos.z + vehicle.forward.z * 8);
     // land in it and it goes everywhere at once

@@ -309,11 +309,12 @@ export const WASH = exit({ at: 0.552, side: 1, len: 380, D: 120, lift: -3, kind:
 /** Zone 9: down a parkway to a drive-thru nobody works at. */
 export const DRIVE = exit({ at: 0.805, side: 1, len: 480, D: 150, lift: -6, kind: 'drive' });
 /** Pines, to the left: the mud flats. */
-export const MUD = exit({ at: 0.06, side: -1, len: 1300, D: 300, lift: -6, kind: 'mud' });
+// the mud flats are part of the ring itself now: a stretch between the race and the Charge you drive straight through
+export const MUD = { kind: 'mud', ring: true, side: 1, at: 0.611, sA: 0.611 * LOOP_LEN, len: 600, sB: 0.611 * LOOP_LEN + 600 };
 /** Under the Trestle, to the right: a field of ramps in the void. */
 export const JUMPS = exit({ at: 0.872, side: 1, len: 820, D: 300, lift: 6, kind: 'jumps' });
 
-const EXITS = [HERD, RACE, HOOD, WASH, DRIVE, MUD, JUMPS];
+const EXITS = [HERD, RACE, HOOD, WASH, DRIVE, JUMPS];
 
 /** Stretches where the highway's barrier is open on `side`, beyond the forks themselves. */
 function extraOpenings(side) {

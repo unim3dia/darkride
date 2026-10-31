@@ -126,7 +126,7 @@ export const ZONES = [
 export const FORKS = [
   { at: 0.1, side: 1, kind: 'dust', len: 780, D: 250, lift: -8 },
   { at: 0.36, side: -1, kind: 'ether', len: 820, D: 280, lift: 22 },
-  { at: 0.6, side: 1, kind: 'sanctum', len: 800, D: 270, lift: 4 },
+  { at: 0.33, side: 1, kind: 'sanctum', len: 800, D: 270, lift: 4 },
   { at: 0.8, side: -1, kind: 'ephemera', len: 780, D: 260, lift: 10 },
 ];
 
