@@ -743,9 +743,22 @@ function homeFrame(dt, raw) {
   const E = state.ending;
   const shut = E ? THREE.MathUtils.smoothstep(E.t, 1.4, 3.4) : 0;
   const ho = home.update(dt, state.time, vehicle, ready, shut);
-  if (ready && !state.homeShown && district.inside(vehicle.pos.x, vehicle.pos.z, 120)) {
-    state.homeShown = true;
-    screens.showCard('THE WAY HOME', 'follow the hearts');
+  // the moment the night is done, wherever you are: a chord, and a nudge home
+  if (ready && !state.doneShown && state.mode === 'ride') {
+    state.doneShown = true;
+    screens.showCard("THAT'S THE NIGHT", 'take it home · back where you started');
+    if (audio.ctx) [196, 245, 294, 392].forEach((f, i) => audio.tone(f, 0.07, 5, { wet: 0.85, delay: i * 0.35 }));
+    state.aberration = Math.max(state.aberration, 0.5);
+  }
+  // and coming back down into the Underpass: the whole place lights up once, and the hearts come on
+  if (ho.arrive) {
+    screens.showCard('WELCOME HOME', 'the night is done · follow the hearts');
+    emitPulse(vehicle.pos.x, vehicle.pos.z, 1.5, 520);
+    emitPulse(vehicle.pos.x, vehicle.pos.z, 0.8, 260);
+    if (audio.ctx) [147, 220, 294, 370, 440].forEach((f, i) => audio.tone(f, 0.09, 7, { wet: 0.9, delay: i * 0.22 }));
+    rig.shake(0.2);
+    state.aberration = Math.max(state.aberration, 0.9);
+    post.uFlash.value = 0.35;
   }
   if (ho.opening && !state.doorSound) { state.doorSound = true; audio.burst('bandpass', 180, 0.5, 2.2, 0.35, 0.2); }
   if (!ho.opening) state.doorSound = false;
@@ -1110,7 +1123,7 @@ function tick(now) {
   if (state.mode === 'ride' && !vehicle.spurHit) state.seenZones.add(z);
   if (z !== state.zone && state.mode === 'ride' && !pk.pocket && pk.cave < 0.01 && !race.active && stampede.w < 0.05 && !(state.hoodW > 0.05)) {
     state.zone = z;
-    screens.showZone(z);
+    if (!(home.revealT !== undefined && state.time - home.revealT < 8)) screens.showZone(z); // the welcome holds the screen
     audio.setZone(z);
     reflections.set(ZONES[z]);
   }

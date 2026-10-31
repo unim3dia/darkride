@@ -187,13 +187,19 @@ export class Home {
    * @param shut   the ending holds the door shut (0..1 closing)
    */
   update(dt, time, vehicle, ready, shut = 0) {
-    this.lit += ((ready ? 1 : 0) - this.lit) * Math.min(1, dt * 0.8);
+    // the first time you come back with the night done, the hearts come on one after another,
+    // running away from you down the ramp toward the door
+    const out = {};
+    if (ready && this.revealT === undefined && (vehicle.pos.distanceTo(this.hearts[0].position) < 260 || this.d.inside(vehicle.pos.x, vehicle.pos.z))) { this.revealT = time; out.arrive = true; }
+    const lit = ready && this.revealT !== undefined;
+    this.lit += ((lit ? 1 : 0) - this.lit) * Math.min(1, dt * 0.8);
     const show = this.lit > 0.01;
+    const reach = lit ? (time - this.revealT) * 14 : 0;
     // a beat runs down the line toward the door, like a pulse
     for (let i = 0; i < this.hearts.length; i++) {
       const h = this.hearts[i];
-      h.visible = show;
-      if (!show) continue;
+      h.visible = show && i < reach;
+      if (!h.visible) continue;
       const beat = Math.pow(Math.max(0, Math.sin(time * 3.2 - i * 0.45)), 6);
       h.scale.setScalar(0.85 + 0.45 * beat);
     }
@@ -201,7 +207,7 @@ export class Home {
     const thump = Math.pow(Math.max(0, Math.sin(time * 3.2)), 8);
     this.heartMat.opacity = this.lit * (0.55 + 0.45 * thump);
     // the door rolls up when you're close, and down when the story says so
-    const near = ready && this.doorDistance(vehicle.pos) < 34;
+    const near = lit && this.doorDistance(vehicle.pos) < 34;
     const want = shut > 0 ? 1 - shut : near ? 1 : 0;
     this.open += (want - this.open) * Math.min(1, dt * (shut > 0 ? 4 : 1.4));
     this.door.position.y = this.open * (DOOR_H - 0.3);
@@ -209,6 +215,8 @@ export class Home {
     this.doorBox.h = this.open > 0.7 ? 0 : DOOR_H;
     this.bulb.intensity = this.lit * (8 + 2 * Math.sin(time * 17) * Math.sin(time * 3.1));
     this.bulbGlass.visible = this.lit > 0.05;
-    return { inside: ready && this.isInside(vehicle.pos), opening: near && this.open < 0.95 };
+    out.inside = lit && this.isInside(vehicle.pos);
+    out.opening = near && this.open < 0.95;
+    return out;
   }
 }
