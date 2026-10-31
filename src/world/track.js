@@ -233,6 +233,8 @@ export function chunkFeatures(index) {
     f.watcher = { spot, s: s0 + 6 + r() * 28, side: r() < 0.5 ? -1 : 1, seed: r() };
   }
 
+  // nothing standing across a ramp's mouth: no truss or overpass where a road peels off or merges
+  if (mouthNear(s0 - 30, s0 + CHUNK_LEN + 30)) { f.truss = false; f.overpass = false; }
   featureCache.set(idx, f);
   return f;
 }
@@ -307,7 +309,7 @@ export const WASH = exit({ at: 0.552, side: 1, len: 380, D: 120, lift: -3, kind:
 /** Zone 9: down a parkway to a drive-thru nobody works at. */
 export const DRIVE = exit({ at: 0.805, side: 1, len: 480, D: 150, lift: -6, kind: 'drive' });
 /** Pines, to the left: the mud flats. */
-export const MUD = exit({ at: 0.06, side: -1, len: 900, D: 260, lift: -6, kind: 'mud' });
+export const MUD = exit({ at: 0.06, side: -1, len: 1300, D: 300, lift: -6, kind: 'mud' });
 /** Under the Trestle, to the right: a field of ramps in the void. */
 export const JUMPS = exit({ at: 0.872, side: 1, len: 820, D: 300, lift: 6, kind: 'jumps' });
 
@@ -325,6 +327,17 @@ function extraOpenings(side) {
 }
 
 const BARE = [];
+
+/** Does [a, b] of the ring touch a stretch where an exit or fork leaves or rejoins? */
+function mouthNear(a, b) {
+  for (const e of [...EXITS, ...FORKS]) {
+    const lap = (e.uSep ?? 0.08) * e.len;
+    for (const [m0, m1] of [[e.sA - 20, e.sA + lap + 20], [e.sB - lap - 20, e.sB + 20]]) {
+      for (const k of [-LOOP_LEN, 0, LOOP_LEN]) if (b > m0 + k && a < m1 + k) return true;
+    }
+  }
+  return false;
+}
 
 /** Is the highway's jersey barrier open on this side here (where an off-ramp peels away)? */
 export function forkOpen(s, side) {

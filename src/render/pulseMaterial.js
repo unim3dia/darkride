@@ -98,7 +98,24 @@ export function pulseMat(params = {}, { puddles = false } = {}) {
     if (puddles) shader.fragmentShader = shader.fragmentShader.replace('#include <roughnessmap_fragment>', PUDDLE);
   };
   m.customProgramCacheKey = () => (puddles ? 'pulse-puddle' : 'pulse');
+  m.userData.pulse = true;
   return m;
+}
+
+/**
+ * Teach an ordinary MeshStandardMaterial to catch the pulse, so the landing light
+ * reaches every place, not only the ones built from pulseMat. Materials that
+ * already rewrite their own shader are left alone.
+ */
+const plain = THREE.Material.prototype.onBeforeCompile;
+export function addPulse(m) {
+  if (!m || !m.isMeshStandardMaterial || m.userData.pulse) return;
+  m.userData.pulse = true;
+  if (m.onBeforeCompile !== plain) return;
+  m.onBeforeCompile = patch;
+  const key = m.customProgramCacheKey.bind(m);
+  m.customProgramCacheKey = () => key() + '|pulse';
+  m.needsUpdate = true;
 }
 
 /** Push a new pulse into the ring buffer. */

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { PULSE, ROAD, ZONES } from './config.js';
 import { createRenderer } from './render/renderer.js';
 import { createSky, createRain } from './render/sky.js';
-import { emitPulse, updatePulses, livePulses, dissolveUniforms } from './render/pulseMaterial.js';
+import { emitPulse, updatePulses, livePulses, dissolveUniforms, addPulse } from './render/pulseMaterial.js';
 import { Particles } from './render/particles.js';
 import { Reflections } from './render/environment.js';
 import { ChunkManager, warmStart } from './world/chunks.js';
@@ -574,7 +574,7 @@ markMouths(hood.spur, 'THE BLOCK', new THREE.Color(2.6, 1.25, 0.35));
  * boards on the approach, glowing arrows across the road into the mouth and down
  * it, and a pair of lit pillars standing at the mouth itself. Done at both ends.
  */
-function markMouths(spur, name, color) {
+function markMouths(spur, name, color, dists = [450, 160]) {
   const shape = new THREE.Shape();
   shape.moveTo(0, 1.6); shape.lineTo(1.6, -0.4); shape.lineTo(1.0, -0.9); shape.lineTo(0, 0.4); shape.lineTo(-1.0, -0.9); shape.lineTo(-1.6, -0.4); shape.closePath();
   const geo = new THREE.ShapeGeometry(shape).rotateX(-Math.PI / 2);
@@ -585,7 +585,8 @@ function markMouths(spur, name, color) {
   // dir +1: driving round the ring forwards to the first mouth; -1: coming the other way to the second
   for (const [s0, dir] of [[spur.sA, 1], [spur.sB, -1]]) {
     const arrow = side * dir < 0 ? '←' : '→';
-    for (const [dist, scale] of [[450, 1], [160, 1.5]]) {
+    for (const dist of dists) {
+      const scale = dist < 200 ? 1.5 : 1;
       const A = sample(s0 - dir * dist);
       const off = side * 2.5;
       const v = new THREE.Vector3(A.x + A.nx * off, A.y + 8 + (scale - 1) * 3, A.z + A.nz * off);
@@ -623,7 +624,9 @@ const wash = new CarWash(scene);
 markMouths(wash.spur, 'REST STOP', new THREE.Color(0.5, 2.2, 1.6));
 const drive = new DriveThru(scene);
 vehicle.pads.push(drive.pad);
+markMouths(drive.spur, 'DRIVE THRU', new THREE.Color(2.8, 1.5, 0.3));
 const mud = new Mud(scene);
+markMouths(mud.spur, 'MUD FLATS', new THREE.Color(2.4, 1.5, 0.7), [900, 450, 160]);
 const jumps = new Jumps(scene);
 // across the Pines highway: a spilled load of logs to jump and rattle over
 const logJam = new LogJam(scene, [HERD, RACE, HOOD, WASH, DRIVE, MUD, JUMPS].map((e) => e.sA ?? e.at * LOOP_LEN));
@@ -1079,7 +1082,18 @@ function tick(now) {
     const flick = Math.sin(state.time * 23 + sg.seed) > -0.9 ? 1 : 0.4;
     const dx = vehicle.pos.x - sg.pos.x, dz = vehicle.pos.z - sg.pos.z;
     const ahead = dx * sg.nx + dz * sg.nz > 0; // you're on the side it faces: still coming up to it
-    const focus = ahead ? 1 - THREE.MathUtils.smoothstep(Math.hypot(dx, dz), FOCUS_NEAR, FOCUS_FAR) : 0;
+    let focus = ahead ? 1 - THREE.MathUtils.smoothstep(Math.hypot(dx, dz), FOCUS_NEAR, FOCUS_FAR) : 0;
+    // every so often, while it's in view but still soft, it stutters into focus for a beat and lets go
+    const dist = Math.hypot(dx, dz);
+    if (ahead && dist < 320 && focus < 0.8) {
+      sg.flashIn = (sg.flashIn ?? 1.5 + Math.random() * 4) - raw;
+      if (sg.flashIn <= 0) { sg.flash = 0.45; sg.flashIn = 3 + Math.random() * 5; }
+    }
+    if (sg.flash > 0) {
+      sg.flash -= raw;
+      focus = Math.sin(state.time * 60 + sg.seed) > -0.5 ? 1 : 0.2; // a neon tube catching
+      sg.f = focus;
+    }
     sg.f = (sg.f ?? focus) + (focus - (sg.f ?? focus)) * Math.min(1, raw * 3);
     sg.mat.opacity = sg.f;
     sg.blur.opacity = 1 - sg.f;
@@ -1136,4 +1150,14 @@ function tick(now) {
 window.__darkride = { vehicle, state, chunks, rig, ROAD, particles, watchers, carView, scene, renderer, district, narrows, places, answerers, emitPulse, ambient, forks, audio, warmStart, race, movie, stampede, herdRoad, atmos, hood, wash, drive, mud, jumps, logJam, herdRoad, spots: () => (WARPS = WARPS || warpSpots()) };
 if (TEST) import('./core/testkit.js').then((m) => m.installTestKit(window.__darkride));
 if (new URLSearchParams(location.search).has('reel')) import('./core/reel.js').then((m) => m.installReel(window.__darkride));
+// the landing light belongs to the whole world: any plain surface that isn't already
+// built to catch it learns to, now and again as new things stream in
+function pulseEverything() {
+  scene.traverse((o) => {
+    if (!o.isMesh || o.isSprite) return;
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) addPulse(m);
+  });
+}
+pulseEverything();
+setInterval(pulseEverything, 3000);
 schedule(tick);
