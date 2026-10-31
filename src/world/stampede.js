@@ -487,7 +487,11 @@ export class Stampede {
   update(dt, time, vehicle, road) {
     herdTime.value = time;
     const h = vehicle.spurHit && vehicle.spurHit.spur === road ? vehicle.spurHit : null;
-    const uh = h ? h.t / road.N : 0;
+    // whichever end you come in by, that's the way the herd runs with you
+    if (h && !this.inside) this.dir = h.t < road.N / 2 ? 1 : -1;
+    this.inside = !!h;
+    const dir = this.dir || 1;
+    const uh = h ? (dir > 0 ? h.t / road.N : 1 - h.t / road.N) : 0;
     // no cut: the herd seeps in as the road leaves the deck, and drains out before it rejoins
     const target = h ? THREE.MathUtils.smoothstep(uh, 0.03, 0.15) * (1 - THREE.MathUtils.smoothstep(uh, 0.86, 0.97)) : 0;
     this.w += (target - this.w) * Math.min(1, dt * 2.5);
@@ -496,7 +500,8 @@ export class Stampede {
     if (!this.group.visible) return out;
     if (h) this.t = h.t;
     // the score: which act we're in, and what it asks of the herd
-    const ur = (this.t || 0) / road.N;
+    const ur = dir > 0 ? (this.t || 0) / road.N : 1 - (this.t || 0) / road.N; // how far through, in your direction
+    const at = (this.t || 0) / road.N;
     const u = THREE.MathUtils.clamp((ur - 0.08) / 0.84, 0, 1); // the score plays over the ramp's middle
     this.hover = 1 - THREE.MathUtils.smoothstep(ur, 0.1, 0.24) * (1 - THREE.MathUtils.smoothstep(ur, 0.76, 0.9));
     const sc = scoreAt(u);
@@ -510,9 +515,9 @@ export class Stampede {
     const fin = THREE.MathUtils.smoothstep(u, 0.4, 0.57);
     const fout = 1 - THREE.MathUtils.smoothstep(u, 0.6, 0.66);
     out.whiteout = Math.pow(fin, 1.8) * fout * this.w;
-    if (this.trees) for (const tr of this.trees) tr.g.visible = Math.abs(tr.u - ur) < 0.12 && ((tr.u * 97) % 1) < sc.trees;
+    if (this.trees) for (const tr of this.trees) tr.g.visible = Math.abs(tr.u - at) < 0.12 && ((tr.u * 97) % 1) < sc.trees;
     const C = road.sample(this.t || 0);
-    const along = vehicle.vel.x * C.tx + vehicle.vel.z * C.tz;
+    const along = dir * (vehicle.vel.x * C.tx + vehicle.vel.z * C.tz);
     const pace = THREE.MathUtils.clamp(Math.max(along, 0), 18, 48);
     const Q = {};
     for (const a of this.herd) {
@@ -542,7 +547,7 @@ export class Stampede {
       a.starMat.opacity = stars * (0.75 + 0.25 * Math.sin(time * 9 + a.seed));
       a.g.visible = form > 0.02 || stars > 0.02;
       if (!a.g.visible) continue;
-      road.sample((this.t || 0) + a.sOff, Q);
+      road.sample((this.t || 0) + dir * a.sOff, Q);
       // out over the void (before the land rises, after it sinks) they hover in space
       // the herd gallops in step: one beat, every body on it
       a.phase = time * 7.5 / Math.sqrt(a.scaleK) + (a.d > 0 ? 0 : Math.PI * 0.5);
@@ -555,7 +560,7 @@ export class Stampede {
       const y = Q.y + a.rise * (1 - hv) + hv * (1.4 - headY);
       const d = a.d + Math.sign(a.d) * hv * (a.half * grow * 0.9 + 2);
       a.g.position.set(Q.x + Q.nx * d, y + bob, Q.z + Q.nz * d);
-      a.g.rotation.set(Math.sin(a.phase * 2) * 0.05, -Q.heading, 0);
+      a.g.rotation.set(Math.sin(a.phase * 2) * 0.05, -Q.heading + (dir < 0 ? Math.PI : 0), 0);
       // smeared by its own speed
       a.g.scale.set(grow, grow, grow * (1 + 1.2 * (1 - form)));
       // a rotary gallop: the two fronts land close together, then the two hinds
@@ -569,14 +574,14 @@ export class Stampede {
       a.eyes.forEach((e) => { e.visible = lit; });
       const rate = (0.3 + I) * Math.max(0, 1.1 - form) * (a.kind === 'wolf' ? 40 : 110) * this.w * Math.min(3, Math.sqrt(a.scaleK));
       const n = Math.floor(rate * dt + Math.random());
-      if (n > 0) this.shed(a, n, Q);
+      if (n > 0) { if (dir < 0) { Q.tx = -Q.tx; Q.tz = -Q.tz; } this.shed(a, n, Q); }
       if (Math.random() < dt * 0.8 * this.w) this.puff(this.embers, a.g.position.x, y + a.hip * a.scaleK, a.g.position.z, 3, a.half * a.scaleK, 2.5);
       out.near = Math.max(out.near, (1 - Math.min(1, (Math.hypot(a.sOff, a.d) - 4) / 40)) * form);
     }
     // the spiral opens ahead and the runes surface beside you
-    const ahead = road.sample((this.t || 0) + 230);
+    const ahead = road.sample((this.t || 0) + dir * 230);
     const eyeC = new THREE.Vector3(ahead.x, ahead.y + 34, ahead.z);
-    const T = new THREE.Vector3(-ahead.tx, 0, -ahead.tz);
+    const T = new THREE.Vector3(-ahead.tx * dir, 0, -ahead.tz * dir);
     this.vortex.update(time, eyeC, T, 70 + 40 * sc.vortex, sc.vortex * this.w);
     this.runes.update(dt, time, road, this.t || 0, sc.runes * this.w);
     this.stepFlakes(dt);

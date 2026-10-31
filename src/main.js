@@ -653,14 +653,8 @@ const SIDE_PALETTES = new Map([
 ]);
 // almost no light: the street lives on its windows
 const HOOD_PALETTE = { fog: 0x1a1714, skyTop: 0x050506, skyHorizon: 0x221d18, glow: 0x2c241c, light: 0.16, exposure: 0.95, fogMul: 0.9, grain: 1.5, rain: 0.2 };
-{
-  // the way in looks like any other exit: signs counting down, the right lane peeling off
-  for (const dist of [600, 300, 120]) {
-    const A = sample(STAMPEDE.a - dist);
-    const v = new THREE.Vector3(A.x + A.nx * (ROAD.HALF_WIDTH + 4), A.y + 6.4, A.z + A.nz * (ROAD.HALF_WIDTH + 4));
-    roadSign('THE CHARGE', `${dist} m · keep right`, v, Math.atan2(-A.tx, -A.tz), [0xbfe2ff, 0x7fa8d8]);
-  }
-}
+// the herd's road can be taken from either end; both are marked
+markMouths(herdRoad, 'THE CHARGE', new THREE.Color(1.1, 1.9, 2.8));
 // the herd's air: cold blue fog the animals come apart in
 const DUST_PALETTE = { fog: 0x6f8a92, skyTop: 0x22303e, skyHorizon: 0x8aa6b0, glow: 0xa6c2cc, light: 0.55, exposure: 1.12, fogMul: 0.95, grain: 1.7, rain: 0.6 };
 const ETHER_CHOIR = forks.pockets[forks.spurs.findIndex((sp) => sp.kind === 'ether')].choir;
