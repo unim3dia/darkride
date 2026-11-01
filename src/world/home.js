@@ -48,10 +48,18 @@ export class Home {
   pickSpot() {
     const d = this.d;
     const clear = (u, vFront, side) => {
-      for (let a = 0; a <= 6; a++) {
-        for (let b = 0; b <= 6; b++) {
-          const p = d.toWorld(u - W / 2 - 2 + ((W + 4) * a) / 6, vFront + side * ((D + 3) * b) / 6);
-          if (d.solidAt(p.x, 1, p.z, 1.5)) return false;
+      // fine enough that a thin fence can't slip between the samples
+      for (let a = 0; a <= 16; a++) {
+        for (let b = 0; b <= 18; b++) {
+          const p = d.toWorld(u - W / 2 - 2 + ((W + 4) * a) / 16, vFront + side * ((D + 3) * b) / 18);
+          if (d.solidAt(p.x, 1, p.z, 1.0)) return false;
+        }
+      }
+      // and the apron in front of the door, out across the street to where the camera stands at the end
+      for (let a = 0; a <= 8; a++) {
+        for (let b = 0; b <= 14; b++) {
+          const p = d.toWorld(u - 5 + a * 1.25, vFront - side * (b * 1.0), 0);
+          if (d.solidAt(p.x, 3, p.z, 0.8)) return false;
         }
       }
       return true;
@@ -170,6 +178,7 @@ export class Home {
       const off = corner ? 6.5 : 6;
       const side = corner ? -Math.sign(n.dot(new THREE.Vector3().subVectors(dirB, dirA))) || 1 : flip;
       const p = pts[i].clone().addScaledVector(n, side * off);
+      if (p.distanceTo(this.world(0, 0, p.y)) < 18) continue; // keep the doorway and the camera's view of it clear
       const g = new THREE.Group();
       const cloak = new THREE.Mesh(new THREE.ConeGeometry(0.55, 2.1, 7, 1, true), body);
       cloak.position.y = 1.05;

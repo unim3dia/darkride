@@ -804,7 +804,7 @@ function beginEnding() {
     const k = THREE.MathUtils.smoothstep(t, 3.6, 10.5);
     const e = k * k * (3 - 2 * k);
     cam.position.copy(from).addScaledVector(out, e * 120).setY(from.y + e * 85);
-    cam.fov = 44 + e * 6;
+    cam.fov = (cam.aspect < 1 ? 74 : 44) + e * 6; // a tall screen needs a wider lens to keep the door and the heart in
     cam.lookAt(at.x, at.y + e * 6, at.z);
   };
   audio.menu?.(false);

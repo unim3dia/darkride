@@ -475,5 +475,142 @@ export function installReel(D) {
     return { bytes, log: D.reelLog };
   }
 
-  window.REEL = { run, run2, run3, hook3, midrace, long, fresh };
+  /** Reel four: vertical, made for the feed. The night drawn by a landing, then worlds, then home. */
+  async function run4() {
+    D.reelLog = [];
+    key('keydown', 'Enter'); key('keyup', 'Enter');
+    await sleep(600);
+    D.audio.silenceMusic(true);
+    begin();
+    const drive = () => key('keydown', 'KeyW');
+    const long = () => sleep(1400); // settle well before rolling: no pops on the first frame
+    const lock = () => cam.fixed(8.5, -4.6, 1.3, 64, 0.9);
+    // HOOK: black road, a camera on the deck, the car comes down in front of it and the light rips out
+    await shot('hook', async () => {
+      weather(0); await onHighway(zoneStart('pines') + 700, 0, 32); highwayPilot(); drive();
+      post(ahead(150, -5, 0.45), 62, 1.4); await long();
+      let wasAir = false;
+      const iv = setInterval(() => { if (wasAir && !v.airborne) { D.emitPulse(v.pos.x, v.pos.z, 1.6, 320); clearInterval(iv); } wasAir = v.airborne; }, 16);
+    }, async () => { await sleep(400); await charge(1000); }, 6.0);
+    // WORLDS: the car never moves in frame, everything else does
+    await shot('pines', async () => { weather(0.7); await onHighway(zoneStart('pines') + 1500, 0, 30); highwayPilot(); drive(); lock(); await long(); }, null, 2.2);
+    await shot('ruins', async () => { weather(0.2); await onHighway(zoneStart('ruins') + 300, 0, 30); highwayPilot(); drive(); lock(); await long(); }, null, 2.2);
+    await shot('mud', async () => { weather(0); await onHighway(D.mud.spur.sA + 230, 0, 26); highwayPilot(); drive(); lock(); await sleep(3500); }, null, 2.4);
+    await shot('ether', async () => { await onSpur(1, 0.3, 26); drive(); lock(); await long(); }, null, 2.2);
+    // AIR
+    await shot('jumps', async () => { await at('jumps', 30); follow(D.jumps.spur); drive(); cam.chase(); await long(); }, async () => { await sleep(300); await charge(1000); }, 3.6);
+    // THE CHARGE
+    await shot('charge', async () => { const p = D.herdRoad.sample(D.herdRoad.N * 0.3); v.placeAt(p.x, p.y + 0.4, p.z, p.heading, 30); v.airborne = false; D.stampede.inside = false; follow(D.herdRoad); await settle(); drive(); cam.track(-5.5, -2, 1.0, 66); await long(); }, null, 3.4);
+    await shot('charge2', async () => { const p = D.herdRoad.sample(D.herdRoad.N * 0.5); v.placeAt(p.x, p.y + 0.4, p.z, p.heading, 32); v.airborne = false; follow(D.herdRoad); await settle(); drive(); cam.chase(); await long(); }, null, 3.0);
+    // THE RACE, already flat out
+    await shot('race', async () => {
+      stopPilot();
+      const T = D.race.track, R = D.race.rival, race = D.race;
+      const t = T.tGrid + (T.tFinish - T.tGrid) * 0.35;
+      const p = T.at(t, 1.6, 0), a = T.sample(t);
+      v.placeAt(p.x, p.y + 0.3, p.z, a.heading, 34); v.airborne = false; spurPilot(T); drive();
+      await sleep(200);
+      race.enter({ t, d: 1.6 }); race.raced = true; race.phase = 'racing'; race.t = 3;
+      R.t = t + 2; R.dist = t + 2; R.v = 34; R.lane = -3.2;
+      race.playerDist = t; race.playerLastT = t;
+      race.set.lamps.forEach((l) => l.material.color.setRGB(0.3, 3, 0.6));
+      await settle(); await long();
+      cam.track(-6.5, 1, 1.2, 66);
+    }, null, 3.0);
+    // SOAP, and a sign in the dark
+    await shot('wash', async () => { stopPilot(); const w = D.wash, p = w.spur.sample(w.tA - 5); v.placeAt(p.x, p.y + 0.3, p.z, p.heading, 3); v.airborne = false; follow(w.spur); await settle(); cam.cabin(); await sleep(3000); }, null, 2.2);
+    await shot('burger', async () => {
+      const dr = D.drive; stopPilot(); const p = dr.spur.sample(dr.tAt(0.36)); v.placeAt(p.x, p.y + 0.3, p.z, p.heading, 16); v.airborne = false; follow(dr.spur); await settle(); drive(); await long();
+      const eye = dr.world(-14, -12, 1.0), sign = dr.world(-38, -14, 34);
+      D.rig.cine = (c) => { c.position.copy(eye); c.fov = 66; c.lookAt(L.copy(v.pos).lerp(sign, 0.5)); };
+    }, null, 2.4);
+    // HOME: the watchers show the way, and the door comes down
+    const S = D.state;
+    S.ordered = true; S.bigJumps = 9; S.passengers = 6; for (let i = 0; i < 12; i++) S.seenZones.add(i);
+    S.doneShown = true; S.homeShown = true;
+    const H = D.home, d = D.district;
+    await shot('watchers', async () => {
+      stopPilot(); weather(0.3);
+      const k0 = Math.max(0, H.route.length - 34), p = H.route[k0], q = H.route[k0 + 3];
+      v.placeAt(p.x, 0.5, p.z, Math.atan2(q.x - p.x, -(q.z - p.z)), 12); v.airborne = false;
+      H.revealT = D.state.time - 20; H.lit = 1; H.reached = 0;
+      pilot = setInterval(() => { if (v.airborne) return; let bi = 0, bd = Infinity; H.route.forEach((r, i) => { const dd = r.distanceToSquared(v.pos); if (dd < bd) { bd = dd; bi = i; } }); const tg = H.route[Math.min(H.route.length - 1, bi + 2)]; let e = Math.atan2(tg.x - v.pos.x, -(tg.z - v.pos.z)) - v.yaw; e = Math.atan2(Math.sin(e), Math.cos(e)); v.yaw += e * 0.16; if (v.speed > 13) v.vel.multiplyScalar(0.96); }, 16);
+      D.rig.offset = undefined; await settle(); drive(); cam.chase(); await long();
+    }, null, 3.4);
+    await shot('home', async () => {
+      stopPilot();
+      const p = H.world(0, 13, 0), q = H.world(0, -10, 0);
+      v.placeAt(p.x, 0.5, p.z, Math.atan2(q.x - p.x, -(q.z - p.z)), 0); v.airborne = false;
+      D.rig.cine = null; D.rig.offset = undefined; await settle(); await sleep(1500);
+      pilot = setInterval(() => { if (v.airborne || D.state.ending) return; let e = Math.atan2(q.x - v.pos.x, -(q.z - v.pos.z)) - v.yaw; e = Math.atan2(Math.sin(e), Math.cos(e)); v.yaw += e * 0.2; if (v.speed > 7) v.vel.multiplyScalar(0.95); }, 16);
+      drive();
+    }, null, 14.0);
+    clearKeys(); stopPilot();
+    const bytes = await finish('four');
+    D.rig.cine = null;
+    return { bytes, log: D.reelLog };
+  }
+
+  /** Reshoots for reel four: the hook from above so the light visibly runs out, and a true Pines shot. */
+  async function hook4() {
+    D.reelLog = [];
+    key('keydown', 'Enter'); key('keyup', 'Enter');
+    await sleep(600);
+    D.audio.silenceMusic(true);
+    begin();
+    const drive = () => key('keydown', 'KeyW');
+    for (const [name, s0, up, side] of [['hookA', 300, 24, -14], ['hookB', 900, 34, 10], ['hookC', 1300, 18, -9]]) {
+      await shot(name, async () => {
+        weather(0); await onHighway(zoneStart('pines') + s0, 0, 32); highwayPilot(); drive();
+        const at = ahead(72, 0, 0), eye = ahead(60, side, up);
+        D.rig.cine = (c) => { c.position.copy(eye); c.fov = 70; c.lookAt(at); };
+        await sleep(1400);
+        let wasAir = false;
+        const iv = setInterval(() => { if (wasAir && !v.airborne) { D.emitPulse(v.pos.x, v.pos.z, 1.6, 320); clearInterval(iv); } wasAir = v.airborne; }, 16);
+      }, async () => { await sleep(300); await charge(1000); }, 5.0);
+    }
+    await shot('pines', async () => { weather(0.6); await onHighway(zoneStart('pines') + 400, 0, 30); highwayPilot(); drive(); cam.fixed(8.5, -4.6, 1.3, 64, 0.9); await sleep(1400); }, null, 2.6);
+    clearKeys(); stopPilot();
+    const bytes = await finish('fourhook');
+    D.rig.cine = null;
+    return { bytes, log: D.reelLog };
+  }
+
+  /** Reshoot of reel four's ending, for the tall frame. */
+  async function home4() {
+    D.reelLog = [];
+    key('keydown', 'Enter'); key('keyup', 'Enter');
+    await sleep(600);
+    D.audio.silenceMusic(true);
+    begin();
+    const drive = () => key('keydown', 'KeyW');
+    const long = () => sleep(1400);
+    // HOME: the watchers show the way, and the door comes down
+    const S = D.state;
+    S.ordered = true; S.bigJumps = 9; S.passengers = 6; for (let i = 0; i < 12; i++) S.seenZones.add(i);
+    S.doneShown = true; S.homeShown = true;
+    const H = D.home, d = D.district;
+    await shot('watchers', async () => {
+      stopPilot(); weather(0.3);
+      const k0 = Math.max(0, H.route.length - 34), p = H.route[k0], q = H.route[k0 + 3];
+      v.placeAt(p.x, 0.5, p.z, Math.atan2(q.x - p.x, -(q.z - p.z)), 12); v.airborne = false;
+      H.revealT = D.state.time - 20; H.lit = 1; H.reached = 0;
+      pilot = setInterval(() => { if (v.airborne) return; let bi = 0, bd = Infinity; H.route.forEach((r, i) => { const dd = r.distanceToSquared(v.pos); if (dd < bd) { bd = dd; bi = i; } }); const tg = H.route[Math.min(H.route.length - 1, bi + 2)]; let e = Math.atan2(tg.x - v.pos.x, -(tg.z - v.pos.z)) - v.yaw; e = Math.atan2(Math.sin(e), Math.cos(e)); v.yaw += e * 0.16; if (v.speed > 13) v.vel.multiplyScalar(0.96); }, 16);
+      D.rig.offset = undefined; await settle(); drive(); cam.chase(); await long();
+    }, null, 3.4);
+    await shot('home', async () => {
+      stopPilot();
+      const p = H.world(0, 13, 0), q = H.world(0, -10, 0);
+      v.placeAt(p.x, 0.5, p.z, Math.atan2(q.x - p.x, -(q.z - p.z)), 0); v.airborne = false;
+      D.rig.cine = null; D.rig.offset = undefined; await settle(); await sleep(1500);
+      pilot = setInterval(() => { if (v.airborne || D.state.ending) return; let e = Math.atan2(q.x - v.pos.x, -(q.z - v.pos.z)) - v.yaw; e = Math.atan2(Math.sin(e), Math.cos(e)); v.yaw += e * 0.2; if (v.speed > 7) v.vel.multiplyScalar(0.95); }, 16);
+      drive();
+    }, null, 14.0);
+    clearKeys(); stopPilot();
+    const bytes = await finish('fourhome');
+    D.rig.cine = null;
+    return { bytes, log: D.reelLog };
+  }
+
+  window.REEL = { run, run2, run3, hook3, midrace, long, fresh, run4, hook4, home4 };
 }
