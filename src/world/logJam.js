@@ -115,8 +115,12 @@ export class LogJam {
     this.group.add(trailer);
   }
 
+  /** The way home is clear: the logs are gone. */
+  clear() { this.cleared = true; this.group.visible = false; }
+
   /** How high the logs stand above the deck at ring position s (0 off the jam). */
   height(s) {
+    if (this.cleared) return 0;
     const k = wrap(s - this.s0 + LOOP_LEN / 2) - LOOP_LEN / 2;
     if (k < 0 || k > WALL + CARPET + TAIL) return 0;
     if (k < WALL) return WALL_H;
@@ -128,6 +132,7 @@ export class LogJam {
 
   /** Is s on the stacked face (the bit you can't drive into)? */
   isWall(s) {
+    if (this.cleared) return false;
     const k = wrap(s - this.s0 + LOOP_LEN / 2) - LOOP_LEN / 2;
     return k >= -0.5 && k < WALL;
   }

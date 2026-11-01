@@ -191,6 +191,7 @@ export class Home {
     this.route = pts;
     // figures: one every GUIDE_GAP metres of route, alternating sides, and one at every corner
     const body = new THREE.MeshStandardMaterial({ color: 0x060607, roughness: 0.95 });
+    body.userData.pulse = true; // they stay shadows even when the landing light runs over them
     const eye = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 1.7, 1.8), toneMapped: false, transparent: true, opacity: 0 });
     this.eyeMat = eye;
     // the lantern glow round their eyes, the thing you actually see from down the street

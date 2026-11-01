@@ -13,6 +13,7 @@ import { FogLayers } from './world/fogLayers.js';
 import { gapAt, zoneIndexAt, sample, rng, project } from './world/track.js';
 import { District } from './world/district.js';
 import { Home } from './world/home.js';
+import { Departures } from './world/departures.js';
 import { Narrows } from './world/narrows.js';
 import { LOOP_LEN } from './world/track.js';
 import { Answerers } from './world/answerers.js';
@@ -146,6 +147,7 @@ const district = new District(scene);
 const narrows = new Narrows(scene, { s0: LOOP_LEN / 2 });
 // home is in the Narrows, a few streets off the avenue
 const home = new Home(scene, narrows);
+const departures = new Departures(scene);
 const places = [district, narrows];
 const placeAt = (x, z, margin = 0) => places.find((p) => p.inside(x, z, margin));
 const answerers = new Answerers(scene);
@@ -434,7 +436,7 @@ const state = {
 if (new URLSearchParams(location.search).has('home')) { state.ordered = true; state.bigJumps = 9; state.passengers = 6; ZONES.forEach((_, i) => state.seenZones.add(i)); }
 
 /** The whole night: round the ring, the burger menu, a few real jumps, a car full of watchers. */
-const nightDone = () => state.ordered && state.bigJumps >= 3 && state.passengers >= 3 && state.seenZones.size >= ZONES.length - 1;
+const nightDone = () => state.nightDone || (state.nightDone = state.ordered && state.bigJumps >= 3 && state.passengers >= 3 && state.seenZones.size >= ZONES.length - 1); // once done, done: the riders leave on the way home
 
 chunks.onSpawn = (c) => {
   watchers.spawn(c);
@@ -763,6 +765,8 @@ try {
 function homeFrame(dt, raw) {
   const ready = nightDone();
   const E = state.ending;
+  if (ready && !E && state.mode === 'ride') homeRunFrame(dt);
+  else if (rig.cine === homeCam) rig.cine = null;
   const shut = E ? THREE.MathUtils.smoothstep(E.t, 1.4, 3.4) : 0;
   const ho = home.update(dt, state.time, vehicle, ready, shut);
   // the moment the night is done, wherever you are: a chord, and a nudge home
@@ -792,6 +796,74 @@ function homeFrame(dt, raw) {
   if (E.t > 3.4 && !E.shut) { E.shut = true; audio.bump(5); rig.shake(0.05); }
   if (E.t > 10.5 && !E.title) { E.title = true; showEndTitle(); }
 }
+
+/**
+ * The drive home: the road clears, a jump throws you forward like in the race,
+ * and the camera stops sitting still: it drifts between angles all the way there.
+ */
+function homeRunFrame(dt) {
+  if (!state.homeRun) {
+    state.homeRun = true;
+    chunks.clearRoad = true;
+    logJam.clear();
+  }
+  // empty the road: cars already out there go, and anything parked along the last streets
+  for (const b of chunks.each('bodies')) {
+    if (b.gone) continue;
+    const p = b.obj.position;
+    const onRing = project(p.x, p.z, b.s ?? vehicle.s);
+    const inWay = (onRing.ok && Math.abs(onRing.d) < ROAD.HALF_WIDTH + 3) || home.route.some((q, i) => i % 3 === 0 && Math.hypot(q.x - p.x, q.z - p.z) < 9);
+    if (inWay) { b.gone = true; b.obj.visible = false; }
+  }
+  // the ones riding with you leave, one at a time, every few seconds of the drive
+  state.leaveIn = (state.leaveIn ?? 4) - dt;
+  if (state.leaveIn <= 0 && state.passengers > 0) {
+    state.leaveIn = 3 + Math.random() * 2.5;
+    const seat = carView.passengers[state.passengers - 1];
+    const at = new THREE.Vector3();
+    if (seat) seat.getWorldPosition(at); else at.copy(vehicle.pos).setY(vehicle.pos.y + 1.3);
+    const modes = ['spiral', 'atoms', 'drift'];
+    departures.release(at, vehicle.vel, modes[state.passengers % 3]);
+    state.passengers--;
+    carView.setPassengers(state.passengers);
+    audio.tone(660 + Math.random() * 220, 0.04, 2.5, { wet: 0.9 });
+  }
+  // the camera, playful until the door is close
+  const near = home.doorDistance(vehicle.pos) < 45;
+  if (near || rig.view !== 0) { if (rig.cine === homeCam) rig.cine = null; return; }
+  if (!rig.cine) { rig.cine = homeCam; state.homeCamT = 0; }
+}
+
+const HC_POS = new THREE.Vector3();
+const HC_LOOK = new THREE.Vector3();
+const HC_TMP = new THREE.Vector3();
+const HC_TMP2 = new THREE.Vector3();
+/** A run of shots that ease into one another: alongside low, out in front looking back, up high, down at the wheels, round the car. */
+const homeCam = (cam, v, dt) => {
+  const t = (state.homeCamT = (state.homeCamT || 0) + dt);
+  const f = v.forward, r = HC_TMP2.set(-f.z, 0, f.x), p = v.pos;
+  const shot = Math.floor(t / 5.5) % 5;
+  const k = (t % 5.5) / 5.5;
+  const at = HC_TMP.copy(p);
+  const want = new THREE.Vector3();
+  if (shot === 0) { want.copy(p).addScaledVector(r, 6.5).addScaledVector(f, -2 + 4 * k).setY(p.y + 0.9); at.addScaledVector(f, 6); }
+  else if (shot === 1) { want.copy(p).addScaledVector(f, 10).addScaledVector(r, -4 + 2 * k).setY(p.y + 1.6); }
+  else if (shot === 2) { want.copy(p).addScaledVector(f, -15).setY(p.y + 9 + 3 * k); at.addScaledVector(f, 22); }
+  else if (shot === 3) { want.copy(p).addScaledVector(f, -5).addScaledVector(r, 1.6).setY(p.y + 0.4); at.addScaledVector(f, 12).setY(p.y + 0.6); }
+  else { const a = k * Math.PI * 1.4 - 0.6; want.copy(p).addScaledVector(f, Math.cos(a) * 9).addScaledVector(r, Math.sin(a) * 9).setY(p.y + 1.4); }
+  // ease the camera's offset from the car, not its place in the world, so it never falls behind at speed
+  const offWant = want.sub(p), lookWant = at.setY(at.y + 0.8).sub(p);
+  const e = 1 - Math.exp(-dt * 2.2);
+  if (!state.homeCamInit) { HC_POS.copy(cam.position).sub(p); HC_LOOK.copy(lookWant); state.homeCamInit = true; }
+  HC_POS.lerp(offWant, e);
+  HC_LOOK.lerp(lookWant, e);
+  const camAt = HC_TMP.copy(p).add(HC_POS);
+  // in the city streets, never through a wall
+  for (const d of [district, narrows]) if (d.inside(camAt.x, camAt.z, 10)) camAt.copy(d.clipCamera(new THREE.Vector3(p.x, p.y + 1.5, p.z), camAt));
+  cam.position.copy(camAt);
+  cam.fov = (cam.aspect < 1 ? 70 : 52);
+  cam.lookAt(HC_TMP2.copy(p).add(HC_LOOK));
+};
 
 function beginEnding() {
   state.ending = { t: 0 };
@@ -861,7 +933,7 @@ function frameEvents(ev) {
     audio.launch(ev.launch.charge);
     rig.fovKick = 4 * ev.launch.charge;
     // on the circuit a jump is a turbo: the switches throw you forward as well as up
-    if (race.phase === 'racing') {
+    if (race.phase === 'racing' || state.homeRun) {
       const f = vehicle.forward;
       const kick = 12 + 18 * ev.launch.charge;
       vehicle.vel.x += f.x * kick;
@@ -1053,6 +1125,7 @@ function tick(now) {
   frameEvents(ev);
 
   homeFrame(dt, raw);
+  departures.update(dt, state.time);
   if (riding && vehicle.offDeck) state.fall = { t: 0, s: vehicle.s, reset: false };
   if (state.fall) updateFall(raw);
 

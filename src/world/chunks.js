@@ -231,7 +231,7 @@ export class ChunkManager {
       }
     }
 
-    for (const w of f.wrecks) {
+    for (const w of this.clearRoad ? [] : f.wrecks) { // once the night is done the road home is empty
       const car = buildStaticCar(true);
       const p = roadPoint(w.s, w.d, 0);
       car.position.copy(p);
