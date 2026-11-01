@@ -17,16 +17,17 @@ const GUIDE_GAP = 26;   // metres between the figures that show you the way
 const U_STREETS = [-245, -175, -105, -35, 35, 105, 175, 245];
 const V_STREETS = [-210, -140, -70, 0, 70, 140, 210];
 
-function heartGeometry() {
-  // point toward +z once laid flat, so a row of them reads as arrows
-  const s = new THREE.Shape();
-  s.moveTo(0, -1.5);
-  s.bezierCurveTo(-0.4, -1.1, -1.6, -0.4, -1.6, 0.45);
-  s.bezierCurveTo(-1.6, 1.25, -0.6, 1.5, 0, 0.75);
-  s.bezierCurveTo(0.6, 1.5, 1.6, 1.25, 1.6, 0.45);
-  s.bezierCurveTo(1.6, -0.4, 0.4, -1.1, 0, -1.5);
-  return new THREE.ShapeGeometry(s, 10).rotateX(-Math.PI / 2).rotateY(Math.PI);
+/** A soft round dab of light, the grain every flame here is made of. */
+function flameTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d'); const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,0.5)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
 }
+// deep blue at the root, paler blues as it climbs, and now and then a streak of yellow
+const FLAME_COLORS = [new THREE.Color(0.03, 0.07, 0.75), new THREE.Color(0.07, 0.2, 0.95), new THREE.Color(0.18, 0.4, 1.05), new THREE.Color(1.5, 0.95, 0.15)];
+const FLAME_BITS = 70;
 
 export class Home {
   constructor(scene, district) {
@@ -118,17 +119,31 @@ export class Home {
     bulbGlass.position.copy(this.bulb.position);
     root.add(bulbGlass);
     this.bulbGlass = bulbGlass;
-    // a heart of light over the door, dark until the night is done
-    this.heartMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.55, 0.05, 0.1), toneMapped: false, fog: false, transparent: true, opacity: 0, side: THREE.DoubleSide });
-    const sign = new THREE.Mesh(heartGeometry().rotateX(Math.PI / 2).rotateZ(Math.PI), this.heartMat);
-    sign.scale.setScalar(1.7);
-    sign.position.set(0, DOOR_H + 2.6, 0.4);
-    root.add(sign);
-    this.sign = sign;
-    // a low red wash over the apron so the house is there when you look for it
-    this.porch = new THREE.PointLight(0xff3040, 0, 30, 1.4);
-    this.porch.position.set(0, DOOR_H + 3, 3);
-    root.add(this.porch);
+    // two iron braziers either side of the door, cold until the night is done, then burning blue
+    const iron = pulseMat({ color: 0x141518, roughness: 0.45, metalness: 0.8 });
+    const tex = flameTexture();
+    this.flameMats = FLAME_COLORS.map((c) => new THREE.SpriteMaterial({ map: tex, color: c, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, toneMapped: false }));
+    this.fires = [];
+    for (const sx of [-1, 1]) {
+      const x = sx * (DOOR_W / 2 + 1.5);
+      const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.3, 1.3, 8), iron);
+      stand.position.set(x, 0.65, 1.1);
+      const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.38, 0.5, 12, 1, true), iron);
+      bowl.position.set(x, 1.5, 1.1);
+      root.add(stand, bowl);
+      const bits = [];
+      for (let i = 0; i < FLAME_BITS; i++) {
+        const yellow = Math.random() < 0.08;
+        const sp = new THREE.Sprite(this.flameMats[yellow ? 3 : i % 3]);
+        sp.userData = { life: Math.random(), speed: 0.8 + Math.random() * 0.8, dx: (Math.random() - 0.5) * 0.6, dz: (Math.random() - 0.5) * 0.6, size: yellow ? 0.16 : 0.5 + Math.random() * 0.7, yellow, phase: Math.random() * 6 };
+        root.add(sp);
+        bits.push(sp);
+      }
+      const light = new THREE.PointLight(0x3a6cff, 0, 22, 1.5);
+      light.position.set(x, 2.6, 1.6);
+      root.add(light);
+      this.fires.push({ x, bits, light });
+    }
   }
 
   /**
@@ -200,6 +215,24 @@ export class Home {
     }
   }
 
+  /** The blue fires: each dab rises, drifts, shrinks and goes, and comes back at the root. */
+  burn(dt, time) {
+    this.flameMats.forEach((m, i) => { m.opacity = this.lit * (i === 3 ? 1 : 0.5); });
+    for (const f of this.fires) {
+      f.light.intensity = this.lit * (16 + 7 * Math.sin(time * 13 + f.x) * Math.sin(time * 4.7));
+      for (const sp of f.bits) {
+        const u = sp.userData;
+        u.life += dt * u.speed * (u.yellow ? 1.6 : 1);
+        if (u.life > 1) { u.life -= 1; u.dx = (Math.random() - 0.5) * 0.6; u.dz = (Math.random() - 0.5) * 0.6; }
+        const k = u.life;
+        const sway = Math.sin(time * 5 + u.phase + k * 4) * 0.12 * k;
+        sp.position.set(f.x + u.dx * (1 - k) + sway, 1.65 + k * (u.yellow ? 3.6 : 2.8), 1.1 + u.dz * (1 - k));
+        const s = u.size * (1 - k * 0.75) * (this.lit > 0.01 ? 1 : 0);
+        sp.scale.set(s, s * (1.6 + k), 1);
+      }
+    }
+  }
+
   /** The walls are solid to the car; the door is too, until it's up. */
   addSolids() {
     const d = this.d;
@@ -221,6 +254,7 @@ export class Home {
     for (const s of [-1, 1]) add(s * W / 2 - 0.3, s * W / 2 + 0.3, -D, 0, H);
     for (const s of [-1, 1]) add(s * DOOR_W / 2, s * (DOOR_W / 2 + side), -0.3, 0.3, H);
     this.doorBox = add(-DOOR_W / 2, DOOR_W / 2, -0.3, 0.4, DOOR_H);
+    for (const sx of [-1, 1]) { const x = sx * (DOOR_W / 2 + 1.5); add(x - 0.7, x + 0.7, 0.4, 1.8, 1.8); }
   }
 
   /** Where the camera stands to watch the door: out on the apron, a little high. */
@@ -260,8 +294,7 @@ export class Home {
     }
     this.eyeMat.opacity = this.lit * (0.75 + 0.25 * Math.sin(time * 9));
     this.haloMat.opacity = this.lit * (0.7 + 0.15 * Math.sin(time * 2.3));
-    const thump = Math.pow(Math.max(0, Math.sin(time * 3.2)), 8);
-    this.heartMat.opacity = this.lit * (0.55 + 0.45 * thump);
+    this.burn(dt, time);
     // the door rolls up when you're close, and down when the story says so
     const near = lit && this.doorDistance(vehicle.pos) < 34;
     const want = shut > 0 ? 1 - shut : near ? 1 : 0;
@@ -271,7 +304,6 @@ export class Home {
     this.doorBox.h = this.open > 0.7 ? 0 : DOOR_H;
     this.bulb.intensity = this.lit * (8 + 2 * Math.sin(time * 17) * Math.sin(time * 3.1));
     this.bulbGlass.visible = this.lit > 0.05;
-    this.porch.intensity = this.lit * (14 + 10 * thump);
     out.inside = lit && this.isInside(vehicle.pos);
     out.opening = near && this.open < 0.95;
     return out;

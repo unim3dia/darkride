@@ -758,7 +758,7 @@ try {
 
 // ---------------------------------------------------------------- going home
 
-/** The hearts, the door, and once you're in: the ending. */
+/** The watchers, the blue fires, the door, and once you're in: the ending. */
 function homeFrame(dt, raw) {
   const ready = nightDone();
   const E = state.ending;
@@ -771,7 +771,7 @@ function homeFrame(dt, raw) {
     if (audio.ctx) [196, 245, 294, 392].forEach((f, i) => audio.tone(f, 0.07, 5, { wet: 0.85, delay: i * 0.35 }));
     state.aberration = Math.max(state.aberration, 0.5);
   }
-  // and coming back down into the Underpass: the whole place lights up once, and the hearts come on
+  // and coming back down into the Underpass: the whole place lights up once, and the watchers come out
   if (ho.arrive) {
     screens.showCard('WELCOME HOME', 'the night is done · the watchers will show you the way');
     emitPulse(vehicle.pos.x, vehicle.pos.z, 1.5, 520);
@@ -804,7 +804,7 @@ function beginEnding() {
     const k = THREE.MathUtils.smoothstep(t, 3.6, 10.5);
     const e = k * k * (3 - 2 * k);
     cam.position.copy(from).addScaledVector(out, e * 120).setY(from.y + e * 85);
-    cam.fov = (cam.aspect < 1 ? 74 : 44) + e * 6; // a tall screen needs a wider lens to keep the door and the heart in
+    cam.fov = (cam.aspect < 1 ? 74 : 44) + e * 6; // a tall screen needs a wider lens to keep the door and its fires in
     cam.lookAt(at.x, at.y + e * 6, at.z);
   };
   audio.menu?.(false);
