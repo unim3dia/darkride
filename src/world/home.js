@@ -1,4 +1,4 @@
-// HOME. A dark building tucked in the back streets of the Underpass, a garage
+// HOME. A three-storey building on a back street of the Narrows, a garage
 // door in its face. It's only a building until you've done the night: then the
 // watchers come out and stand along the way, a few at a time, eyes lit, turned
 // toward the next corner, until the last of them stands by the door. It rolls
@@ -8,10 +8,11 @@ import { ROAD } from '../config.js';
 import { sample } from './track.js';
 import { pulseMat } from '../render/pulseMaterial.js';
 
-const W = 18;        // across the face
-const D = 22;        // deep
-const H = 9;         // tall
-const DOOR_W = 7.6;
+const W = 20;        // across the face
+const D = 23;        // deep
+const H = 14;        // three floors: the garage, and two above it to live in
+const FLOOR = 4.8;   // the garage's ceiling
+const DOOR_W = 8.6;
 const DOOR_H = 4.6;
 const GUIDE_GAP = 26;   // metres between the figures that show you the way
 const U_STREETS = [-245, -175, -105, -35, 35, 105, 175, 245];
@@ -48,6 +49,12 @@ export class Home {
    */
   pickSpot() {
     const d = this.d;
+    if (d.homeBlock) {
+      // the Narrows keeps a block empty for it: front at the block's edge, door onto the street
+      const b = d.homeBlock;
+      Object.assign(this, { u: b.cu, S: b.street, side: b.side, vFront: b.street + b.side * 5 });
+      return;
+    }
     const clear = (u, vFront, side) => {
       // fine enough that a thin fence can't slip between the samples
       for (let a = 0; a <= 16; a++) {
@@ -103,7 +110,22 @@ export class Home {
     box(W + 0.6, 0.6, D + 0.6, 0, H, -D / 2);                       // roof
     for (const s of [-1, 1]) box(side, H, 0.6, s * (DOOR_W / 2 + side / 2), H / 2, 0); // face, either side of the door
     box(DOOR_W, H - DOOR_H, 0.6, 0, DOOR_H + (H - DOOR_H) / 2, 0);  // over the door
+    this.buildBike(root, trim);
     box(W - 1, 0.04, D - 1, 0, 0.03, -D / 2, trim);                 // the floor inside
+    box(W - 1, 0.4, D - 1, 0, FLOOR + 0.2, -D / 2);                 // the garage's ceiling, the flat above
+    box(W + 0.4, 0.25, 0.5, 0, FLOOR + 0.4, 0.3, trim);             // a ledge at the first floor
+    box(W + 0.4, 0.25, 0.5, 0, FLOOR + 4.6, 0.3, trim);             // and the second
+    // the flat: windows across the two floors above the garage, dark glass, one with someone's lamp on
+    const glass = new THREE.MeshStandardMaterial({ color: 0x05070a, roughness: 0.05, metalness: 0.9, envMapIntensity: 1.2 });
+    this.windowLit = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.9, 0.62, 0.32), toneMapped: false });
+    for (const [fy, lit] of [[FLOOR + 2.2, 1], [FLOOR + 6.6, -1]]) {
+      for (const wx of [-6.2, 0, 6.2]) {
+        const pane = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 2.2), wx === 0 && lit > 0 ? this.windowLit : glass);
+        pane.position.set(wx, fy, 0.32);
+        root.add(pane);
+        box(3.5, 0.18, 0.4, wx, fy - 1.2, 0.4, trim); // a sill
+      }
+    }
     box(DOOR_W + 0.8, 0.3, 0.9, 0, DOOR_H + 0.15, 0.2, trim);       // the door's head
     // the door: slats on a panel that rolls up into the head
     this.door = new THREE.Group();
@@ -113,7 +135,7 @@ export class Home {
     root.add(this.door);
     // one bare bulb inside, warm, the only light the place has
     this.bulb = new THREE.PointLight(0xffb070, 0, 26, 1.6);
-    this.bulb.position.set(0, H - 1.5, -D / 2);
+    this.bulb.position.set(0, FLOOR - 0.6, -D / 2);
     root.add(this.bulb);
     const bulbGlass = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 2, 1.2), toneMapped: false }));
     bulbGlass.position.copy(this.bulb.position);
@@ -152,14 +174,14 @@ export class Home {
    */
   buildGuides() {
     const d = this.d;
-    const avenue = U_STREETS.filter((a) => a > -d.DU + 30).reduce((b, a) => (Math.abs(a - this.u) < Math.abs(b - this.u) ? a : b));
+    const avenue = (d.streetsU || U_STREETS).filter((a) => a > -d.DU + 30).reduce((b, a) => (Math.abs(a - this.u) < Math.abs(b - this.u) ? a : b));
     const pts = [];
     for (let u = -d.DU - 260; u < avenue; u += 8) { const S = sample(d.s0 + u); pts.push(new THREE.Vector3(S.x, S.y, S.z)); }
     const leg = (u0, v0, u1, v1) => { const n = Math.max(1, Math.round(Math.hypot(u1 - u0, v1 - v0) / 8)); for (let i = 1; i <= n; i++) pts.push(d.toWorld(u0 + ((u1 - u0) * i) / n, v0 + ((v1 - v0) * i) / n, 0)); };
     leg(avenue, d.roadV(avenue), avenue, this.S);
     // along the back street on its far side, then swing round into the door
     const dirU = Math.sign(this.u - avenue) || 1;
-    const far = this.S - this.side * 3.5;
+    const far = this.S - this.side * (d.homeBlock ? 2.2 : 3.5);
     leg(avenue, this.S, avenue + dirU * 6, far);
     leg(avenue + dirU * 6, far, this.u - dirU * 13, far);
     const a = d.toWorld(this.u - dirU * 13, far, 0), c = d.toWorld(this.u, far, 0), b = this.world(0, 1, 0);
@@ -215,6 +237,51 @@ export class Home {
     }
   }
 
+  /**
+   * Waiting inside, off to the left of where the car goes: a long, low black bike,
+   * a fat back tyre, chrome where the bulb catches it, its headlamp off.
+   */
+  buildBike(root, trim) {
+    const bike = new THREE.Group();
+    const black = pulseMat({ color: 0x08080a, roughness: 0.35, metalness: 0.6 });
+    const chrome = pulseMat({ color: 0x9aa0a8, roughness: 0.18, metalness: 1.0 });
+    const rubber = pulseMat({ color: 0x060606, roughness: 0.9 });
+    const add = (geo, m, x, y, z, rx = 0, ry = 0, rz = 0) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.rotation.set(rx, ry, rz); bike.add(o); return o; };
+    // wheels: tyre, rim, a few spokes
+    for (const [z, r, w] of [[1.05, 0.36, 0.13], [-0.95, 0.4, 0.24]]) {
+      add(new THREE.TorusGeometry(r, w / 1.6, 10, 24), rubber, 0, r + w / 2, z, 0, Math.PI / 2, 0);
+      add(new THREE.TorusGeometry(r - 0.07, 0.025, 6, 24), chrome, 0, r + w / 2, z, 0, Math.PI / 2, 0);
+      for (let k = 0; k < 6; k++) add(new THREE.BoxGeometry(0.015, (r - 0.08) * 2, 0.015), chrome, 0, r + w / 2, z, k * Math.PI / 6, 0, 0);
+    }
+    // frame, tank, seat, tail
+    add(new THREE.BoxGeometry(0.12, 0.12, 1.9), black, 0, 0.62, 0.0, 0.08, 0, 0);
+    add(new THREE.CapsuleGeometry(0.2, 0.55, 6, 12), black, 0, 0.95, 0.35, Math.PI / 2 - 0.12, 0, 0);
+    add(new THREE.BoxGeometry(0.3, 0.09, 0.75), black, 0, 0.86, -0.4, -0.05, 0, 0);
+    add(new THREE.BoxGeometry(0.22, 0.06, 0.5), black, 0, 0.92, -0.95, -0.25, 0, 0);
+    // engine block and pipes
+    add(new THREE.BoxGeometry(0.34, 0.34, 0.45), chrome, 0, 0.5, 0.2);
+    for (const sx of [-1, 1]) add(new THREE.CylinderGeometry(0.045, 0.06, 1.3, 8), chrome, sx * 0.2, 0.38, -0.5, Math.PI / 2 - 0.08, 0, 0);
+    // forks, raked out front, and wide bars
+    for (const sx of [-1, 1]) add(new THREE.CylinderGeometry(0.03, 0.03, 1.15, 6), chrome, sx * 0.1, 0.92, 0.88, -0.45, 0, 0);
+    add(new THREE.CylinderGeometry(0.022, 0.022, 0.95, 6), chrome, 0, 1.4, 0.62, 0, 0, Math.PI / 2);
+    for (const sx of [-1, 1]) add(new THREE.CylinderGeometry(0.03, 0.03, 0.14, 6), rubber, sx * 0.46, 1.4, 0.62, 0, 0, Math.PI / 2);
+    add(new THREE.SphereGeometry(0.11, 10, 8), chrome, 0, 1.2, 1.0);
+    // leaning on its stand, nosed toward the door
+    bike.scale.setScalar(1.4);
+    bike.position.set(-W / 2 + 3, 0, -D / 2 - 1);
+    bike.rotation.set(0, 0.35, 0.12);
+    root.add(bike);
+    this.bike = bike;
+    // a cold work-light hung over it, so the chrome catches when the door goes up
+    this.bikeLight = new THREE.PointLight(0x9ab8ff, 0, 13, 1.2);
+    this.bikeLight.position.set(-W / 2 + 3, FLOOR - 0.8, -D / 2 - 0.5);
+    root.add(this.bikeLight);
+    const tube = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.06, 0.1), new THREE.MeshBasicMaterial({ color: new THREE.Color(1.4, 1.6, 2.0), toneMapped: false }));
+    tube.position.copy(this.bikeLight.position).y += 0.5;
+    root.add(tube);
+    this.tube = tube;
+  }
+
   /** The blue fires: each dab rises, drifts, shrinks and goes, and comes back at the root. */
   burn(dt, time) {
     this.flameMats.forEach((m, i) => { m.opacity = this.lit * (i === 3 ? 1 : 0.5); });
@@ -258,7 +325,7 @@ export class Home {
   }
 
   /** Where the camera stands to watch the door: out on the apron, a little high. */
-  watchPoint(back = 0, up = 0) { return this.world(0, 11 + back, 3.0 + up); }
+  watchPoint(back = 0, up = 0) { return this.world(0, (this.d.homeBlock ? 8 : 11) + back, (this.d.homeBlock ? 3.6 : 3.0) + up); }
   doorPoint() { return this.world(0, 0, 2.3); }
 
   /** Is the car in, well past the door? */
@@ -304,6 +371,8 @@ export class Home {
     this.doorBox.h = this.open > 0.7 ? 0 : DOOR_H;
     this.bulb.intensity = this.lit * (8 + 2 * Math.sin(time * 17) * Math.sin(time * 3.1));
     this.bulbGlass.visible = this.lit > 0.05;
+    this.bikeLight.intensity = this.lit * 24;
+    this.tube.visible = this.lit > 0.05;
     out.inside = lit && this.isInside(vehicle.pos);
     out.opening = near && this.open < 0.95;
     return out;

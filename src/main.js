@@ -143,8 +143,9 @@ const reflections = new Reflections(renderer, scene);
 reflections.set(ZONES[0]);
 // the street-level places on the ring: the Underpass at home, the Narrows across the loop
 const district = new District(scene);
-const home = new Home(scene, district);
 const narrows = new Narrows(scene, { s0: LOOP_LEN / 2 });
+// home is in the Narrows, a few streets off the avenue
+const home = new Home(scene, narrows);
 const places = [district, narrows];
 const placeAt = (x, z, margin = 0) => places.find((p) => p.inside(x, z, margin));
 const answerers = new Answerers(scene);
@@ -767,7 +768,7 @@ function homeFrame(dt, raw) {
   // the moment the night is done, wherever you are: a chord, and a nudge home
   if (ready && !state.doneShown && state.mode === 'ride') {
     state.doneShown = true;
-    screens.showCard("THAT'S THE NIGHT", 'take it home · back where you started');
+    screens.showCard("THAT'S THE NIGHT", 'take it home · it is in the Narrows');
     if (audio.ctx) [196, 245, 294, 392].forEach((f, i) => audio.tone(f, 0.07, 5, { wet: 0.85, delay: i * 0.35 }));
     state.aberration = Math.max(state.aberration, 0.5);
   }
@@ -803,7 +804,7 @@ function beginEnding() {
     // hold on the door while it comes down, then lift away: back and up, slow at first
     const k = THREE.MathUtils.smoothstep(t, 3.6, 10.5);
     const e = k * k * (3 - 2 * k);
-    cam.position.copy(from).addScaledVector(out, e * 120).setY(from.y + e * 85);
+    cam.position.copy(from).addScaledVector(out, e * 22).setY(from.y + e * 120); // straight up out of the narrow street
     cam.fov = (cam.aspect < 1 ? 74 : 44) + e * 6; // a tall screen needs a wider lens to keep the door and its fires in
     cam.lookAt(at.x, at.y + e * 6, at.z);
   };

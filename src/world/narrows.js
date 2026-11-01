@@ -41,6 +41,18 @@ export class Narrows extends District {
     const vs = [];
     for (let u = -228; u <= 228; u += PITCH) us.push(u);
     for (let v = -190; v <= 190; v += PITCH) vs.push(v);
+    // one block is kept empty for the place you go home to: a couple of streets off the avenue,
+    // in from where the ring comes into the city
+    this.streetsU = us.slice(0, -1).map((u) => u + PITCH / 2);
+    this.streetsV = vs.slice(0, -1).map((v) => v + PITCH / 2);
+    for (const cu of [us[3], us[4], us[2], us[5]]) {
+      const rv = this.roadV(cu);
+      const cv = vs.filter((v) => Math.abs(v - rv) > 60 && Math.abs(v - rv) < 105 && Math.hypot(cu - PLAZA.u, v - PLAZA.v) > PLAZA.r + 30 && v !== vs[0] && v !== vs[vs.length - 1])[0];
+      if (cv === undefined) continue;
+      const side = Math.sign(cv - rv); // the door faces back toward the avenue
+      this.homeBlock = { cu, cv, side, street: cv - side * PITCH / 2 };
+      break;
+    }
     let i = 0;
     for (const cu of us) {
       let j = 0;
@@ -62,6 +74,7 @@ export class Narrows extends District {
 
   /** A block: towers shoulder to shoulder, values and heights from the phrase. */
   block(K, cu, cv, i, j, edge) {
+    if (this.homeBlock && cu === this.homeBlock.cu && cv === this.homeBlock.cv) return;
     const r = this.r;
     let v0 = cv - HALF;
     let v1 = cv + HALF;
