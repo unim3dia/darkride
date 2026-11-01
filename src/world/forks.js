@@ -178,7 +178,7 @@ export class Forks {
     make(sp.sB + 110, -1);
 
     // five warnings on the ramp's side of the road, counting down to the split
-    for (const dist of [1000, 750, 500, 300, 150]) {
+    for (const dist of [500, 160]) { // two boards, not five: the road shouldn't be a wall of signs
       // not down in the start district: there you're still on the streets, not the highway
       const ws = ((sp.sA - dist) % LOOP_LEN + LOOP_LEN) % LOOP_LEN;
       if (ws < 520 || ws > LOOP_LEN - 520) continue;

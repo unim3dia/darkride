@@ -166,6 +166,13 @@ export class Home {
       root.add(light);
       this.fires.push({ x, bits, light });
     }
+    // a thin column of blue light standing up out of the roof: once the night is done you can see
+    // where home is from anywhere in the Narrows, over the tops of the towers
+    const beamMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.12, 0.3, 1.1), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, toneMapped: false, side: THREE.DoubleSide });
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 1.4, 220, 12, 1, true), beamMat);
+    beam.position.set(0, H + 110, -D / 2);
+    root.add(beam);
+    this.beamMat = beamMat;
   }
 
   /**
@@ -225,7 +232,7 @@ export class Home {
       g.add(cloak, head);
       for (const x of [-0.09, 0.09]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.045, 6, 4), eye); e.position.set(x, 2.24, 0.22); g.add(e); }
       const halo = new THREE.Sprite(this.haloMat);
-      halo.scale.set(1.6, 1.6, 1);
+      halo.scale.set(2.4, 2.4, 1);
       halo.position.set(0, 2.24, 0.25);
       g.add(halo);
       g.scale.setScalar(1.25);
@@ -363,6 +370,7 @@ export class Home {
     this.eyeMat.opacity = this.lit * (0.75 + 0.25 * Math.sin(time * 9));
     this.haloMat.opacity = this.lit * (0.7 + 0.15 * Math.sin(time * 2.3));
     this.burn(dt, time);
+    this.beamMat.opacity = this.lit * (0.32 + 0.08 * Math.sin(time * 1.3));
     // the door rolls up when you're close, and down when the story says so
     const near = lit && this.doorDistance(vehicle.pos) < 34;
     const want = shut > 0 ? 1 - shut : near ? 1 : 0;

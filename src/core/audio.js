@@ -920,6 +920,61 @@ export class Audio {
   }
 
   /** M: first the world goes quiet and only the car is left; again, and everything is silent; again, all back. */
+  /**
+   * The drive home has its own music: a slow D-minor pad that breathes, a soft
+   * eighth-note arpeggio walking the chords, a muffled heartbeat kick. The zone's
+   * drone, choir and radio step aside while it plays. homeScoreTick runs it.
+   */
+  homeScore(on) {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    if (!this.homeBus) {
+      this.homeBus = this.gain(0);
+      this.homeBus.connect(this.amb);
+      const send = this.gain(0.45);
+      this.homeBus.connect(send).connect(this.verbIn);
+      this.homePad = [];
+      const lp = this.filter('lowpass', 900, 0.7);
+      lp.connect(this.homeBus);
+      for (const f of [73.42, 110, 146.83, 174.61, 220]) {
+        for (const det of [-4, 4]) {
+          const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f; o.detune.value = det;
+          const g = this.gain(0.035); o.connect(g).connect(lp); o.start();
+          this.homePad.push({ o, base: f });
+        }
+      }
+      this.homeLp = lp;
+      this.homeStep = 0; this.homeNext = 0;
+    }
+    this.homeOn = on;
+    this.homeBus.gain.cancelScheduledValues(t);
+    this.homeBus.gain.setTargetAtTime(on ? 0.55 : 0, t, on ? 1.6 : 1.2);
+    this.silenceMusic(on);
+  }
+
+  /** Each frame while the home music plays: the chords turn every two bars, the arp and the heartbeat keep time. */
+  homeScoreTick() {
+    if (!this.ctx || !this.homeOn) return;
+    const ctx = this.ctx, now = ctx.currentTime, BEAT = 0.5;
+    if (!this.homeNext) this.homeNext = now + 0.1;
+    // Dm, Bb, F, C: roots and their chord tones (Hz)
+    const CH = [[146.83, 174.61, 220], [116.54, 146.83, 174.61], [174.61, 220, 261.63], [130.81, 164.81, 196]];
+    const ROOTS = [73.42, 58.27, 87.31, 65.41];
+    while (this.homeNext < now + 0.12) {
+      const step = this.homeStep++;
+      const bar = Math.floor(step / 16) % 4;
+      const when = this.homeNext;
+      if (step % 16 === 0) for (const p of this.homePad) p.o.frequency.setTargetAtTime(p.base * (ROOTS[bar] / 73.42), when, 0.6);
+      const c = CH[bar];
+      const f = c[step % 3] * (step % 6 < 3 ? 2 : 4);
+      this.tone(f, 0.022, 0.5, { type: 'triangle', wet: 0.75, delay: when - now });
+      if (step % 2 === 0) this.tone(58, 0.11, 0.35, { type: 'sine', to: 38, wet: 0.2, delay: when - now }); // heartbeat on the beat
+      if (step % 8 === 4) this.tone(c[2] * 8, 0.008, 1.4, { type: 'sine', wet: 0.95, delay: when - now }); // a high glint now and then
+      this.homeNext += BEAT / 2;
+    }
+    this.homeLp.frequency.setTargetAtTime(700 + 500 * (0.5 + 0.5 * Math.sin(now * 0.21)), now, 0.5); // the pad breathes
+  }
+
   toggleMute() {
     if (!this.ctx) return;
     this.muteStage = ((this.muteStage || 0) + 1) % 3;

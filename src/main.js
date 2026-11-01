@@ -532,10 +532,11 @@ const movie = new DriveInMovie(district, district.driveIn.booth);
 // just past the Narrows, a left-hand exit: the road becomes the circuit, one long lap, and comes back
 const race = new Race(scene, rng(5150));
 vehicle.spurs.push(race.track);
-for (const [dist, scale] of [[600, 1], [150, 1.5]]) {
-  const A = sample(race.track.sA - dist);
-  const v = new THREE.Vector3(A.x - A.nx * 2.5, A.y + 8 + (scale - 1) * 3, A.z - A.nz * 2.5); // hung over the left lane, gantry-style
-  plateSign('← THE RACE', dist > 200 ? `${dist} m · exit left` : 'FOLLOW THE ARROWS', v, Math.atan2(-A.tx, -A.tz), scale);
+{
+  // one glowing board on the left shoulder, then the arrows do the rest
+  const A = sample(race.track.sA - 300);
+  const v = new THREE.Vector3(A.x - A.nx * (ROAD.HALF_WIDTH + 4), A.y + 6.4, A.z - A.nz * (ROAD.HALF_WIDTH + 4));
+  roadSign('← THE RACE', '300 m · follow the arrows', v, Math.atan2(-A.tx, -A.tz), [0xd8f0ff, 0xffe080]);
 }
 raceChevrons();
 
@@ -558,7 +559,7 @@ function raceChevrons() {
   // after the finish: arrows down the last stretch and on into the ring, under a board that says where you're going
   for (let t = T.tSepB - 90; t < T.N - 8; t += 10) { const P = T.sample(t); put(P.x, P.y, P.z, P.tx, P.tz); }
   const P = T.sample(T.tSepB - 110);
-  plateSign('RING ROAD →', 'merge right · ahead', new THREE.Vector3(P.x, P.y + 8, P.z), Math.atan2(-P.tx, -P.tz), 1.2);
+  roadSign('RING ROAD →', 'merge right', new THREE.Vector3(P.x + P.nx * (ROAD.HALF_WIDTH + 4), P.y + 6.4, P.z + P.nz * (ROAD.HALF_WIDTH + 4)), Math.atan2(-P.tx, -P.tz), [0xd8f0ff, 0xffe080]);
 }
 const atmos = new Atmos(scene);
 const stampede = new Stampede(scene);
@@ -604,13 +605,13 @@ function markMouths(spur, name, color, dists = [450, 160]) {
   // dir +1: driving round the ring forwards to the first mouth; -1: coming the other way to the second
   for (const [s0, dir] of [[spur.sA, 1], [spur.sB, -1]]) {
     const arrow = side * dir < 0 ? '←' : '→';
-    for (const dist of dists) {
-      const scale = dist < 200 ? 1.5 : 1;
-      const A = sample(s0 - dir * dist);
-      const off = side * 2.5;
-      const v = new THREE.Vector3(A.x + A.nx * off, A.y + 8 + (scale - 1) * 3, A.z + A.nz * off);
+    // one glowing board on the shoulder the exit leaves from; it pulls into focus as you come up to it
+    {
+      const A = sample(s0 - dir * 300);
+      const off = side * (ROAD.HALF_WIDTH + 4);
+      const v = new THREE.Vector3(A.x + A.nx * off, A.y + 6.4, A.z + A.nz * off);
       const top = arrow === '←' ? `${arrow} ${name}` : `${name} ${arrow}`;
-      plateSign(top, dist > 200 ? `${dist} m · exit ${arrow === '←' ? 'left' : 'right'}` : 'FOLLOW THE ARROWS', v, Math.atan2(-A.tx * dir, -A.tz * dir), scale);
+      roadSign(top, '300 m · follow the arrows', v, Math.atan2(-A.tx * dir, -A.tz * dir), [color.clone().multiplyScalar(0.4).getHex(), 0xe8e0d0]);
     }
     // arrows drifting from the middle of the road over to the edge the exit leaves from
     for (let k = 140; k >= 0; k -= 14) {
@@ -649,7 +650,7 @@ const jumps = new Jumps(scene);
 // across the Pines highway: a spilled load of logs to jump and rattle over
 const logJam = new LogJam(scene, [HERD, RACE, HOOD, WASH, DRIVE, MUD, JUMPS].map((e) => e.sA ?? e.at * LOOP_LEN));
 vehicle.logJam = logJam;
-for (const dist of [400, 200, 80]) {
+for (const dist of [250]) {
   const A = sample(logJam.s0 - dist);
   const v = new THREE.Vector3(A.x + A.nx * (ROAD.HALF_WIDTH + 4), A.y + 6.4, A.z + A.nz * (ROAD.HALF_WIDTH + 4));
   roadSign('LOGS ON ROAD', `${dist} m · jump it`, v, Math.atan2(-A.tx, -A.tz), [0xffd27a, 0xd8a868]);
@@ -657,9 +658,10 @@ for (const dist of [400, 200, 80]) {
 const sides = [wash, drive, mud, jumps];
 for (const sp of sides) if (sp !== mud) vehicle.spurs.push(sp.spur);
 sidesRef = sides;
-const SIDE_SIGNS = [[wash, 'REST STOP', 'gas · car wash →'], [drive, 'BURGER NIGHT', 'drive-thru →'], [mud, 'THE MUD FLATS', 'ahead · floor it'], [jumps, 'THE JUMPS', 'big air →']];
+// the rest stop and the drive-thru have their own boards at the mouth; these two get one each
+const SIDE_SIGNS = [[mud, 'THE MUD FLATS', 'ahead · floor it'], [jumps, 'THE JUMPS', 'big air →']];
 for (const [pl, title, sub] of SIDE_SIGNS) {
-  for (const dist of [400, 200]) {
+  for (const dist of [300]) {
     const A = sample(pl.spur.sA - dist);
     const side = pl.def.side;
     const v = new THREE.Vector3(A.x + A.nx * side * (ROAD.HALF_WIDTH + 4), A.y + 6.4, A.z + A.nz * side * (ROAD.HALF_WIDTH + 4));
@@ -767,6 +769,7 @@ function homeFrame(dt, raw) {
   const E = state.ending;
   if (ready && !E && state.mode === 'ride') homeRunFrame(dt);
   else if (rig.cine === homeCam) rig.cine = null;
+  if (E) audio.homeScoreTick(); // the home music carries on into the ending and goes down with the light
   const shut = E ? THREE.MathUtils.smoothstep(E.t, 1.4, 3.4) : 0;
   const ho = home.update(dt, state.time, vehicle, ready, shut);
   // the moment the night is done, wherever you are: a chord, and a nudge home
@@ -828,9 +831,24 @@ function homeRunFrame(dt) {
     carView.setPassengers(state.passengers);
     audio.tone(660 + Math.random() * 220, 0.04, 2.5, { wet: 0.9 });
   }
-  // the camera, playful until the door is close
-  const near = home.doorDistance(vehicle.pos) < 45;
-  if (near || rig.view !== 0) { if (rig.cine === homeCam) rig.cine = null; return; }
+  // is the player actually going home? closing on the door keeps the spell; wandering off for
+  // a long while, or far away, lets the night's ordinary sound come back (and it returns if they turn for home)
+  const dist = home.doorDistance(vehicle.pos);
+  if (!state.homeAway) {
+    if (state.homeBest === undefined || dist < state.homeBest - 25) { state.homeBest = Math.min(state.homeBest ?? dist, dist); state.homeIdle = 0; }
+    else state.homeIdle = (state.homeIdle || 0) + dt;
+    if (state.homeIdle > 75 || dist > state.homeBest + 600) { state.homeAway = true; state.homeFar = dist; }
+  } else {
+    // they've wandered: wait until they've clearly turned back toward home
+    state.homeFar = Math.max(state.homeFar, dist);
+    if (dist < state.homeFar - 250) { state.homeAway = false; state.homeBest = dist; state.homeIdle = 0; }
+  }
+  const going = !state.homeAway;
+  if (going !== !!state.homeMusic) { state.homeMusic = going; audio.homeScore(going); }
+  audio.homeScoreTick();
+  // the camera, playful until the door is close (and only while they're heading home)
+  const near = dist < 45;
+  if (near || rig.view !== 0 || !going) { if (rig.cine === homeCam) rig.cine = null; return; }
   if (!rig.cine) { rig.cine = homeCam; state.homeCamT = 0; }
 }
 
@@ -1273,7 +1291,7 @@ function tick(now) {
     const dist = Math.hypot(dx, dz);
     if (ahead && dist < 320 && focus < 0.8) {
       sg.flashIn = (sg.flashIn ?? 1.5 + Math.random() * 4) - raw;
-      if (sg.flashIn <= 0) { sg.flash = 0.45; sg.flashIn = 3 + Math.random() * 5; }
+      if (sg.flashIn <= 0) { sg.flash = 0.45; sg.flashIn = 6 + Math.random() * 7; } // mostly blown out; now and then it gives you the words
     }
     if (sg.flash > 0) {
       sg.flash -= raw;
