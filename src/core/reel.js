@@ -612,5 +612,95 @@ export function installReel(D) {
     return { bytes, log: D.reelLog };
   }
 
-  window.REEL = { run, run2, run3, hook3, midrace, long, fresh, run4, hook4, home4 };
+  /** Reel five (16:9): the newer night — mud by day, the drive home, the riders leaving, the Narrows, the fires. */
+  async function run5() {
+    D.reelLog = [];
+    key('keydown', 'Enter'); key('keyup', 'Enter');
+    await sleep(600);
+    D.audio.silenceMusic(true);
+    begin();
+    const drive = () => key('keydown', 'KeyW');
+    const long = () => sleep(1500);
+    const S = D.state, H = D.home;
+    await shot('mudday', async () => { weather(0); await onHighway(D.mud.spur.sA + 230, 0, 26); highwayPilot(); drive(); cam.fixed(6.5, -4.6, 1.15, 46, 0.9); await sleep(3500); }, null, 3.0);
+    // the night is done from here on
+    S.ordered = true; S.bigJumps = 9; S.passengers = 6; for (let i = 0; i < 12; i++) S.seenZones.add(i);
+    S.doneShown = true; D.carView.setPassengers(6);
+    await shot('homerun', async () => {
+      await onHighway(D.narrows.s0 - 1500, 0, 30); highwayPilot(); drive();
+      D.rig.cine = null; D.rig.view = 0; S.leaveIn = 1.2; S.homeCamT = 0; S.homeCamInit = false;
+      await long();
+    }, async () => { await sleep(2600); await charge(900); }, 9.0);
+    await shot('cabinleave', async () => {
+      S.passengers = 6; D.carView.setPassengers(6);
+      await onHighway(D.narrows.s0 - 2400, 0, 26); highwayPilot(); drive();
+      D.rig.cine = null; D.rig.view = 2; S.leaveIn = 1.0; await long();
+    }, null, 6.0);
+    D.rig.view = 0;
+    await shot('arrive', async () => {
+      stopPilot();
+      const k0 = 6, p = H.route[k0], q = H.route[k0 + 3];
+      v.placeAt(p.x, p.y + 0.4, p.z, Math.atan2(q.x - p.x, -(q.z - p.z)), 18); v.airborne = false;
+      H.revealT = undefined; H.lit = 0; H.reached = 0;
+      pilot = setInterval(() => { if (v.airborne) return; let bi = 0, bd = Infinity; H.route.forEach((r, i) => { const dd = r.distanceToSquared(v.pos); if (dd < bd) { bd = dd; bi = i; } }); const tg = H.route[Math.min(H.route.length - 1, bi + 2)]; let e = Math.atan2(tg.x - v.pos.x, -(tg.z - v.pos.z)) - v.yaw; e = Math.atan2(Math.sin(e), Math.cos(e)); v.yaw += e * 0.16; if (v.speed > 15) v.vel.multiplyScalar(0.97); }, 16);
+      await settle(D.narrows.s0); drive(); D.rig.cine = null; await long();
+    }, null, 7.0);
+    await shot('streets', async () => {
+      stopPilot();
+      const k0 = Math.max(0, H.route.length - 30), p = H.route[k0], q = H.route[k0 + 3];
+      v.placeAt(p.x, 0.5, p.z, Math.atan2(q.x - p.x, -(q.z - p.z)), 10); v.airborne = false; H.lit = 1;
+      pilot = setInterval(() => { if (v.airborne) return; let bi = 0, bd = Infinity; H.route.forEach((r, i) => { const dd = r.distanceToSquared(v.pos); if (dd < bd) { bd = dd; bi = i; } }); const tg = H.route[Math.min(H.route.length - 1, bi + 2)]; let e = Math.atan2(tg.x - v.pos.x, -(tg.z - v.pos.z)) - v.yaw; e = Math.atan2(Math.sin(e), Math.cos(e)); v.yaw += e * 0.16; if (v.speed > 10) v.vel.multiplyScalar(0.96); }, 16);
+      D.rig.offset = undefined; await settle(D.narrows.s0); drive(); D.rig.cine = null; await long();
+    }, null, 4.0);
+    await shot('fires', async () => {
+      stopPilot(); clearKeys();
+      const p = H.world(-3, 16, 0); v.placeAt(p.x, 0.5, p.z, 0, 0); v.airborne = false;
+      const from = H.world(4, 9, 1.6), at = H.world(-2, 0, 3.2);
+      let t = 0; D.rig.cine = (c, _v, dt) => { t += dt; c.position.copy(from).lerp(H.world(-4, 9, 1.4), Math.min(1, t / 5)); c.fov = 44; c.lookAt(at); };
+      await sleep(1500);
+    }, null, 4.0);
+    await shot('bike', async () => {
+      const from = H.world(3, -3, 2.0), at = H.world(-7, -12, 0.9);
+      let t = 0; D.rig.cine = (c, _v, dt) => { t += dt; c.position.copy(from).lerp(H.world(1, -6, 1.6), Math.min(1, t / 4)); c.fov = 50; c.lookAt(at); };
+      await sleep(1000);
+    }, null, 3.0);
+    await shot('home', async () => {
+      stopPilot(); D.rig.cine = null;
+      const p = H.world(0, 8, 0), q = H.world(0, -10, 0);
+      v.placeAt(p.x, 0.5, p.z, Math.atan2(q.x - p.x, -(q.z - p.z)), 0); v.airborne = false;
+      D.rig.offset = undefined; await settle(D.narrows.s0); await sleep(1500);
+      pilot = setInterval(() => { if (v.airborne || D.state.ending) return; let e = Math.atan2(q.x - v.pos.x, -(q.z - v.pos.z)) - v.yaw; e = Math.atan2(Math.sin(e), Math.cos(e)); v.yaw += e * 0.2; if (v.speed > 6) v.vel.multiplyScalar(0.95); }, 16);
+      drive();
+    }, null, 15.0);
+    clearKeys(); stopPilot();
+    const bytes = await finish('five');
+    D.rig.cine = null;
+    return { bytes, log: D.reelLog };
+  }
+
+  /** Reshoot: the drive home through the purple Ruins, the riders lifting away. */
+  async function run5b() {
+    D.reelLog = [];
+    key('keydown', 'Enter'); key('keyup', 'Enter');
+    await sleep(600);
+    D.audio.silenceMusic(true);
+    begin();
+    const drive = () => key('keydown', 'KeyW');
+    const S = D.state;
+    S.ordered = true; S.bigJumps = 9; for (let i = 0; i < 12; i++) S.seenZones.add(i); S.doneShown = true;
+    for (const [name, back] of [['runA', 2700], ['runB', 3300]]) {
+      await shot(name, async () => {
+        S.passengers = 6; D.carView.setPassengers(6);
+        weather(0.3); await onHighway(D.narrows.s0 - back, 0, 30); highwayPilot(); drive();
+        D.rig.cine = null; D.rig.view = 0; S.leaveIn = 0.8; S.homeCamT = 0; S.homeCamInit = false;
+        await sleep(1500);
+      }, async () => { await sleep(4000); await charge(900); }, 11.0);
+    }
+    clearKeys(); stopPilot();
+    const bytes = await finish('fiveb');
+    D.rig.cine = null;
+    return { bytes, log: D.reelLog };
+  }
+
+  window.REEL = { run, run2, run3, hook3, midrace, long, fresh, run4, hook4, home4, run5, run5b };
 }
