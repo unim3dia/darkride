@@ -13,6 +13,7 @@ import { FogLayers } from './world/fogLayers.js';
 import { gapAt, zoneIndexAt, sample, rng, project } from './world/track.js';
 import { District } from './world/district.js';
 import { Home } from './world/home.js';
+import { flowOf, ALLOWS, HEADING_START, stepHeading } from './core/machines.js';
 import { Departures } from './world/departures.js';
 import { Narrows } from './world/narrows.js';
 import { LOOP_LEN } from './world/track.js';
@@ -259,10 +260,11 @@ function raceFrame(dt) {
  * surface after a warp.
  */
 function unstick(dt, input, rr) {
-  const trying = state.mode === 'ride' && !state.fall && !rr.hold && (input.throttle > 0.5 || input.brake > 0.5);
+  const free = ALLOWS[flowOf(state)].unstick;
+  const trying = free && !rr.hold && (input.throttle > 0.5 || input.brake > 0.5);
   const stuck = trying && vehicle.speed < 1.2 && !vehicle.airborne;
   state.stuckT = stuck ? (state.stuckT || 0) + dt : 0;
-  const lost = state.mode === 'ride' && !vehicle.airborne && !vehicle.onRoad && !vehicle.spurHit && !placeAt(vehicle.pos.x, vehicle.pos.z, 0);
+  const lost = free && !vehicle.airborne && !vehicle.onRoad && !vehicle.spurHit && !placeAt(vehicle.pos.x, vehicle.pos.z, 0);
   state.lostT = lost ? (state.lostT || 0) + dt : 0;
   if (state.stuckT > 4 || state.lostT > 2.5) {
     state.stuckT = state.lostT = 0;
@@ -834,22 +836,14 @@ function homeRunFrame(dt) {
   // is the player actually going home? closing on the door keeps the spell; wandering off for
   // a long while, or far away, lets the night's ordinary sound come back (and it returns if they turn for home)
   const dist = home.doorDistance(vehicle.pos);
-  if (!state.homeAway) {
-    if (state.homeBest === undefined || dist < state.homeBest - 25) { state.homeBest = Math.min(state.homeBest ?? dist, dist); state.homeIdle = 0; }
-    else state.homeIdle = (state.homeIdle || 0) + dt;
-    if (state.homeIdle > 75 || dist > state.homeBest + 600) { state.homeAway = true; state.homeFar = dist; }
-  } else {
-    // they've wandered: wait until they've clearly turned back toward home
-    state.homeFar = Math.max(state.homeFar, dist);
-    if (dist < state.homeFar - 250) { state.homeAway = false; state.homeBest = dist; state.homeIdle = 0; }
-  }
-  const going = !state.homeAway;
+  state.heading = stepHeading(state.heading ?? HEADING_START, dist, dt);
+  const going = !state.heading.away;
   if (going !== !!state.homeMusic) { state.homeMusic = going; audio.homeScore(going); }
   audio.homeScoreTick();
   // the camera, playful until the door is close (and only while they're heading home)
   const near = dist < 45;
   if (near || rig.view !== 0 || !going) { if (rig.cine === homeCam) rig.cine = null; return; }
-  if (!rig.cine) { rig.cine = homeCam; state.homeCamT = 0; }
+  if (!rig.cine) { rig.cine = homeCam; state.homeCamT = 0; state.homeCamInit = false; } // start from wherever the camera is now
 }
 
 const HC_POS = new THREE.Vector3();
@@ -1126,17 +1120,18 @@ function tick(now) {
   state.time += dt;
 
   const input = TOUCH ? mergeTouch(readInput()) : readInput();
-  if (input.map && !state.mapOpen) { audio.toggleMute(); openMap(); } // the M of M-A-P muted; put it back
+  if (input.map && !state.mapOpen) { audio.toggleMute(-1); openMap(); } // the M of M-A-P stepped the mute; step it back
   if (state.mapOpen) { last = now; return; }
   if (state.mode === 'title' && input.any) startRide();
   if (input.mute) audio.toggleMute();
-  if (input.view && state.mode === 'ride') rig.cycle();
-  if (input.warp && state.mode === 'ride') warp(typeof input.warp === 'string' ? input.warp : undefined);
+  const flow = flowOf(state);
+  if (input.view && ALLOWS[flow].view) rig.cycle();
+  if (input.warp && ALLOWS[flow].warp) warp(typeof input.warp === 'string' ? input.warp : undefined);
   if (state.warping && (state.warping.t += raw) > 0.45) landWarp();
 
   const rr = state.mode === 'ride' ? raceFrame(dt) : {};
   unstick(dt, input, rr);
-  const riding = state.mode === 'ride' && !state.fall && !rr.hold && !state.washTake && !state.ending;
+  const riding = ALLOWS[flowOf(state)].drive && !rr.hold;
   const drive = riding ? input : { throttle: 0, brake: 0, steer: 0, hopHeld: false, hopPressed: false };
   if (rr.hold) vehicle.vel.multiplyScalar(Math.exp(-dt * 3.5)); // you roll to a stop on the line
   const ev = physics(dt, drive);
@@ -1351,7 +1346,7 @@ function tick(now) {
 }
 
 // expose a tiny handle for debugging in the console
-window.__darkride = { vehicle, state, chunks, rig, ROAD, particles, watchers, carView, scene, renderer, district, narrows, places, answerers, emitPulse, ambient, forks, audio, warmStart, race, movie, stampede, herdRoad, atmos, hood, wash, drive, mud, jumps, logJam, home, spots: () => (WARPS = WARPS || warpSpots()) };
+window.__darkride = { vehicle, state, chunks, rig, ROAD, particles, watchers, carView, scene, renderer, district, narrows, places, answerers, emitPulse, ambient, forks, audio, warmStart, race, movie, stampede, herdRoad, atmos, hood, wash, drive, mud, jumps, logJam, home, flow: () => ({ flow: flowOf(state), allows: ALLOWS[flowOf(state)], race: race.phase, wash: wash.state, hood: hood.state, driveThru: drive.state, heading: state.heading ?? null, camera: rig.cine ? (rig.cine.name || 'scripted') : rig.name, nightDone: !!state.nightDone }), spots: () => (WARPS = WARPS || warpSpots()) };
 if (TEST) import('./core/testkit.js').then((m) => m.installTestKit(window.__darkride));
 if (new URLSearchParams(location.search).has('reel')) import('./core/reel.js').then((m) => m.installReel(window.__darkride));
 // the landing light belongs to the whole world: any plain surface that isn't already

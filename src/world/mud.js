@@ -46,6 +46,8 @@ class RingStretch {
     this.sA = s0; this.sB = s0 + len; this.N = len;
     this.U = Float32Array.from({ length: len + 1 }, (_, i) => i / len);
     this.tSepA = 0; this.tSepB = len - 1;
+    this.X = Float64Array.from({ length: len + 1 }, (_, i) => sample(s0 + i).x); // the map reads these directly
+    this.Z = Float64Array.from({ length: len + 1 }, (_, i) => sample(s0 + i).z);
     this.openings = [];
     const b = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity };
     for (let t = 0; t <= len; t += 10) { const q = sample(s0 + t); b.minX = Math.min(b.minX, q.x); b.maxX = Math.max(b.maxX, q.x); b.minZ = Math.min(b.minZ, q.z); b.maxZ = Math.max(b.maxZ, q.z); }

@@ -975,9 +975,9 @@ export class Audio {
     this.homeLp.frequency.setTargetAtTime(700 + 500 * (0.5 + 0.5 * Math.sin(now * 0.21)), now, 0.5); // the pad breathes
   }
 
-  toggleMute() {
+  toggleMute(step = 1) {
     if (!this.ctx) return;
-    this.muteStage = ((this.muteStage || 0) + 1) % 3;
+    this.muteStage = ((this.muteStage || 0) + step + 3) % 3;
     const t = this.ctx.currentTime;
     this.amb.gain.setTargetAtTime(this.muteStage === 0 ? 1 : 0, t, 0.15);
     this.master.gain.setTargetAtTime(this.muteStage === 2 ? 0 : 0.9, t, 0.15);
