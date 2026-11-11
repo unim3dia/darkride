@@ -123,6 +123,7 @@ export class Court {
       const board = new THREE.Mesh(new THREE.BoxGeometry(6.4, 4.2, 0.18), new THREE.MeshStandardMaterial({ color: alive ? 0xcfd2d4 : 0x4a4c4e, roughness: 0.45, emissive: alive ? 0x1c1e20 : 0x000000 }));
       board.position.set(0, RIM_Y + 1.5, 0.1);
       g.add(board);
+      if (!alive) this.deadBoard(board, g, steel);
       const rim = new THREE.Mesh(new THREE.TorusGeometry(RIM_R, 0.09, 8, 28).rotateX(Math.PI / 2), alive ? new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 0.5, 0.15) }) : steel);
       rim.position.set(0, RIM_Y, -(BOARD_A - RIM_A));
       if (!alive) { rim.rotation.x = 0.7; rim.position.y -= 0.5; g.rotation.z = 0.06; } // bent down, somebody hung on it once
@@ -189,6 +190,52 @@ export class Court {
     // and a thin column of the same light standing in it, so you can find the spot from across the floor
     this.beamMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.25, 0.45, 1.0), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, toneMapped: false, side: THREE.DoubleSide });
     this.ring.add(new THREE.Mesh(new THREE.CylinderGeometry(RING - 0.2, RING - 0.2, 9, 32, 1, true).translate(0, 4.5, 0), this.beamMat));
+  }
+
+  /** The dead hoop's character: a cracked board with a tag on it, a net in strands, a pair of sneakers hung by their laces. */
+  deadBoard(board, g, steel) {
+    const c = document.createElement('canvas'); c.width = 512; c.height = 340;
+    const x = c.getContext('2d');
+    x.fillStyle = '#5a5c5e'; x.fillRect(0, 0, 512, 340);
+    for (let i = 0; i < 1400; i++) { x.fillStyle = `rgba(0,0,0,${Math.random() * 0.2})`; x.fillRect(Math.random() * 512, Math.random() * 340, 3, 3); }
+    x.strokeStyle = 'rgba(210,215,220,0.55)'; x.lineWidth = 5; x.strokeRect(150, 150, 212, 150); // the painted square
+    x.strokeStyle = 'rgba(15,16,18,0.9)'; x.lineWidth = 3;      // the cracks
+    x.beginPath(); x.moveTo(470, 0); x.lineTo(380, 90); x.lineTo(400, 150); x.lineTo(300, 230); x.lineTo(320, 340); x.stroke();
+    x.beginPath(); x.moveTo(380, 90); x.lineTo(300, 70); x.lineTo(250, 10); x.stroke();
+    x.font = '700 62px "Syncopate", sans-serif'; x.fillStyle = 'rgba(255,90,50,0.85)'; x.textAlign = 'center';  // a tag, in orange spray
+    x.save(); x.translate(180, 100); x.rotate(-0.08); x.fillText('GAME', 0, 0); x.fillText('OVER', 8, 62); x.restore();
+    x.fillStyle = 'rgba(255,90,50,0.5)'; for (let i = 0; i < 5; i++) x.fillRect(110 + i * 22, 112 + i * 1, 3, 40 + Math.random() * 40); // drips
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+    board.material.map = tex; board.material.color.set(0xffffff); board.material.needsUpdate = true;
+    board.rotation.z = -0.05; // it has slumped
+    const rimZ = -(BOARD_A - RIM_A);
+    this.sway = [];
+    // the net: torn into strands of different lengths
+    const cord = new THREE.MeshBasicMaterial({ color: 0xb8b8b8, transparent: true, opacity: 0.55 });
+    for (let i = 0; i < 9; i++) {
+      const ang = (i / 9) * Math.PI * 2, len = 0.4 + Math.random() * 1.5;
+      const s = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, len, 3).translate(0, -len / 2, 0), cord);
+      const holder = new THREE.Group();
+      holder.position.set(Math.cos(ang) * RIM_R * 0.92, RIM_Y - 0.45, rimZ + Math.sin(ang) * RIM_R * 0.92);
+      holder.add(s); g.add(holder);
+      this.sway.push({ o: holder, amp: 0.05 + Math.random() * 0.1, f: 0.8 + Math.random() });
+    }
+    // sneakers: tied together, slung over the bent rim
+    const laces = new THREE.Group();
+    laces.position.set(-RIM_R * 0.6, RIM_Y - 0.3, rimZ - 0.1);
+    laces.add(new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 1.4, 3).translate(0, -0.7, 0), new THREE.MeshBasicMaterial({ color: 0x777777 })));
+    const shoeMat = new THREE.MeshStandardMaterial({ color: 0xcfcfcf, roughness: 0.8 });
+    for (const [dx, dy] of [[-0.12, -1.45], [0.14, -1.7]]) {
+      const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.2, 0.55), shoeMat);
+      shoe.position.set(dx, dy, 0); shoe.rotation.x = 0.3;
+      laces.add(shoe);
+    }
+    g.add(laces);
+    this.sway.push({ o: laces, amp: 0.12, f: 0.6 });
+    // a dull orange work-light bolted over it, dying
+    this.deadLight = new THREE.PointLight(0xff7a30, 5, 14, 1.6);
+    this.deadLight.position.set(0, RIM_Y + 3.4, 1.5);
+    g.add(this.deadLight);
   }
 
   /** The scoreboard: each side's letters, lit as they're earned. */
@@ -321,6 +368,8 @@ export class Court {
   update(dt, time, vehicle, launch) {
     const out = { snd: [] };
     this.pending = out;
+    for (const w of this.sway || []) { w.o.rotation.z = Math.sin(time * w.f + w.amp * 20) * w.amp; w.o.rotation.x = Math.cos(time * w.f * 0.8) * w.amp * 0.6; }
+    if (this.deadLight) this.deadLight.intensity = Math.sin(time * 31) > 0.82 || Math.sin(time * 0.9) > 0.97 ? 0 : 5 + Math.sin(time * 2.3);
     for (const l of this.lamps) {
       const f = Math.sin(time * 23 + l.seed) > 0.8 && Math.sin(time * 1.7 + l.seed) > 0 ? 0.25 : 1;
       l.L.intensity = 70 * f;

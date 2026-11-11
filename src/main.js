@@ -118,14 +118,14 @@ function roadSign(top, bottom, pos, yaw, colors) {
   const mk = (map) => new THREE.MeshBasicMaterial({ map, color: new THREE.Color(0.95, 0.95, 0.95), transparent: true, depthWrite: false, fog: false });
   const mat = mk(sharpTex);
   const blur = mk(blurredCopy(sharpTex));
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(8.4, 4.2), mat);
-  const mb = new THREE.Mesh(new THREE.PlaneGeometry(9.2, 4.6), blur);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(12.6, 6.3), mat); // big enough to read from a long way off
+  const mb = new THREE.Mesh(new THREE.PlaneGeometry(13.8, 6.9), blur);
   for (const o of [m, mb]) { o.position.copy(pos); o.rotation.y = yaw; scene.add(o); }
-  ROAD_SIGNS.push({ mat, blur, pos: pos.clone(), nx: Math.sin(yaw), nz: Math.cos(yaw), seed: Math.random() * 10 });
+  ROAD_SIGNS.push({ mat, blur, mb, pos: pos.clone(), nx: Math.sin(yaw), nz: Math.cos(yaw), seed: Math.random() * 10 });
 }
 
-const FOCUS_FAR = 150;  // beyond this the sign is a soft glow
-const FOCUS_NEAR = 70;  // inside this (and ahead of you) it's sharp
+const FOCUS_FAR = 110;  // beyond this the sign reads clearly
+const FOCUS_NEAR = 45;  // inside this it blows out into a hazy, stuttering glow
 const sky = createSky(scene);
 const rain = createRain(scene);
 const audio = new Audio();
@@ -672,11 +672,7 @@ const jumps = new Jumps(scene);
 // across the Pines highway: a spilled load of logs to jump and rattle over
 const logJam = new LogJam(scene, [HERD, RACE, HOOD, WASH, DRIVE, MUD, JUMPS].map((e) => e.sA ?? e.at * LOOP_LEN));
 vehicle.logJam = logJam;
-for (const dist of [250]) {
-  const A = sample(logJam.s0 - dist);
-  const v = new THREE.Vector3(A.x + A.nx * (ROAD.HALF_WIDTH + 4), A.y + 6.4, A.z + A.nz * (ROAD.HALF_WIDTH + 4));
-  roadSign('LOGS ON ROAD', `${dist} m · jump it`, v, Math.atan2(-A.tx, -A.tz), [0xffd27a, 0xd8a868]);
-}
+logJam.clear(); // no logs on the road
 const sides = [wash, drive, mud, jumps];
 for (const sp of sides) if (sp !== mud) vehicle.spurs.push(sp.spur);
 sidesRef = sides;
@@ -1293,10 +1289,10 @@ function tick(now) {
     const flick = Math.sin(state.time * 23 + sg.seed) > -0.9 ? 1 : 0.4;
     const dx = vehicle.pos.x - sg.pos.x, dz = vehicle.pos.z - sg.pos.z;
     const ahead = dx * sg.nx + dz * sg.nz > 0; // you're on the side it faces: still coming up to it
-    let focus = ahead ? 1 - THREE.MathUtils.smoothstep(Math.hypot(dx, dz), FOCUS_NEAR, FOCUS_FAR) : 0;
+    let focus = ahead ? THREE.MathUtils.smoothstep(Math.hypot(dx, dz), FOCUS_NEAR, FOCUS_FAR) : 0;
     // every so often, while it's in view but still soft, it stutters into focus for a beat and lets go
     const dist = Math.hypot(dx, dz);
-    if (ahead && dist < 320 && focus < 0.8) {
+    if (ahead && dist < FOCUS_FAR && focus < 0.8) {
       sg.flashIn = (sg.flashIn ?? 1.5 + Math.random() * 4) - raw;
       if (sg.flashIn <= 0) { sg.flash = 0.45; sg.flashIn = 6 + Math.random() * 7; } // mostly blown out; now and then it gives you the words
     }
@@ -1308,6 +1304,9 @@ function tick(now) {
     sg.f = (sg.f ?? focus) + (focus - (sg.f ?? focus)) * Math.min(1, raw * 3);
     sg.mat.opacity = sg.f;
     sg.blur.opacity = 1 - sg.f;
+    // up close the blur stutters between three ghost frames, like a tube about to go
+    const ghost = Math.floor(state.time * 14 + sg.seed) % 3 - 1;
+    sg.mb.position.set(sg.pos.x + sg.nz * ghost * 0.35, sg.pos.y + ghost * 0.12, sg.pos.z - sg.nx * ghost * 0.35);
     sg.mat.color.setScalar(1.6 * flick);
     sg.blur.color.setScalar((ahead ? 1.4 : 2.4) * flick); // past it, it flares bright
   }

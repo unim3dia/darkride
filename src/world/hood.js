@@ -8,7 +8,7 @@ import { merge } from './props.js';
 import { Court } from './court.js';
 
 const P = {};
-const HALF = 5.5;           // half width of the street
+const HALF = 8;             // half width of the street: wide and forgiving
 const COURT_U = 0.5;        // where the court sits along the loop
 
 export const hoodHalfWidth = () => HALF;
@@ -80,6 +80,7 @@ export class Hood {
     for (const p of glows) { const sp2 = new THREE.Sprite(glowMat); sp2.position.copy(p); sp2.scale.setScalar(7); this.group.add(sp2); }
     this.buildPlayground(sp, tCourt - 70, r);
     this.court = new Court(this.group, sp, tCourt);
+    sp.openings.push([tCourt - 38, tCourt + 38, -1]); // the road's side wall gives way along the court, so you can drive straight on
     this.tCourt = tCourt;
   }
 

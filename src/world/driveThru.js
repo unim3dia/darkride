@@ -99,7 +99,8 @@ function arrowTexture(text) {
 }
 
 // the lot, in its own frame: a along the exit road, c across it (negative = toward the building)
-const LOT = { a0: -48, a1: 48, c0: -52, c1: -7 };
+const LOT = { a0: -64, a1: 26, c0: -52, c1: -7 };
+const RAMP_A = -22;   // west of this, the lot's floor follows the road's own slope, so there's no step at the gap
 const BUILDING = [-12, 12, -37, -23];      // a0 a1 c0 c1
 // Like a real drive-thru, the lane runs counter-clockwise: in up the right side, along the back with
 // the building on your left (the board comes first, then the window), out down the left side.
@@ -115,23 +116,47 @@ const WALLS = [
   [12, 16, -32, -31],
   [11, 12, -45, -42.4],       // a kink in the back lane before the board
   [-16, -12, -31, -30],       // and one on the way out (left side)
-  [-30, 30, -8.6, -7.4],      // a curb along the road: you can't cut in, you come round
+  [-20, 20, -8.6, -7.4],      // a short curb along the road: the gaps either side are the way in and out
 ];
 
 export class DriveThru extends SidePlace {
   constructor(scene) {
-    super(scene, DRIVE, { name: 'BURGER NIGHT', sub: 'drive-thru · open', mapSub: 'drive-thru', color: '#ffb46a', halfWidth: 5 });
+    super(scene, DRIVE, { name: 'BURGER NIGHT', sub: 'drive-thru · open', mapSub: 'drive-thru', color: '#ffb46a', halfWidth: 8 });
     this.buildRoad(new THREE.MeshStandardMaterial({ color: 0x151517, roughness: 0.8 }));
     this.T0 = this.tAt(0.5);
     const O = this.spur.sample(this.T0, {});
     this.O = { x: O.x, y: O.y, z: O.z, tx: O.tx, tz: O.tz, nx: O.nx, nz: O.nz, heading: O.heading };
     // the walls of the exit open onto the lot at either end of it
-    this.spur.openings.push([this.T0 + LOT.a0, this.T0 - 30, -1], [this.T0 + 30, this.T0 + LOT.a1, -1]);
+    this.spur.openings.push([this.T0 + LOT.a0 - 8, this.T0 - 20, -1], [this.T0 + LOT.a0 - 8, this.T0 - 36, 1]); // one wide gap, in and out by the same way (the road bends here, so its left and right flip: open both)
     this.buildParkway();
     this.buildRestaurant();
+    this.buildEntrance();
     this.state = 'drive';
     const self = this;
-    this.pad = { height(x, z) { const [a, c] = self.local(x, z); return a > LOT.a0 && a < LOT.a1 && c > LOT.c0 && c < LOT.c1 ? self.O.y + 0.02 : -Infinity; } };
+    this.pad = { height(x, z) { const [a, c] = self.local(x, z); return a > LOT.a0 && a < LOT.a1 && c > LOT.c0 && c < LOT.c1 ? self.floorY(a) : -Infinity; } };
+  }
+
+  /** Height of the lot's floor at `a`: level in the lot, easing onto the road's slope toward the entrance. */
+  floorY(a) {
+    if (a >= RAMP_A) return this.O.y + 0.02;
+    const road = this.spur.sample(this.T0 + a, {}).y;
+    const k = THREE.MathUtils.smoothstep(a, RAMP_A, LOT.a0); // 0 in the lot, 1 at the road's end
+    return this.O.y + 0.02 + (road - this.O.y) * k;
+  }
+
+  /** The sloping apron: a strip of asphalt from the lot down to the road's level, so the entrance has a surface. */
+  buildApron() {
+    const pos = [];
+    const step = 3;
+    for (let a = LOT.a0; a < RAMP_A; a += step) {
+      const q = (aa, c) => { const w = this.world(aa, c, 0); w.y = this.floorY(aa) - 0.04; return w; };
+      const p = [q(a, -44), q(a + step, -44), q(a + step, -6), q(a, -6)];
+      for (const i of [0, 1, 2, 0, 2, 3]) pos.push(p[i].x, p[i].y, p[i].z);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.computeVertexNormals();
+    this.group.add(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x141416, roughness: 0.55, metalness: 0.1, side: THREE.DoubleSide })));
   }
 
   /** World (x, z) → lot frame (a, c). */
@@ -152,6 +177,26 @@ export class DriveThru extends SidePlace {
     return new THREE.BoxGeometry(c1 - c0, h, a1 - a0).rotateY(-this.O.heading).translate(p.x, p.y, p.z);
   }
 
+  /**
+   * The way in: a row of low amber bollards along the front of the lot from before the gap
+   * to the head of the lane, a soft warm pool of light at the mouth, and an ENTER board.
+   * Dim on purpose: you should be led, not dazzled.
+   */
+  buildEntrance() {
+    const posts = [];
+    for (let a = -60; a <= 16; a += 5) posts.push(this.box(a - 0.15, a + 0.15, -11.15, -10.85, 0.7));
+    this.group.add(new THREE.Mesh(merge(posts), new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 0.75, 0.22), toneMapped: false })));
+    const mouth = new THREE.PointLight(0xffb070, 7, 26, 1.5);
+    mouth.position.copy(this.world(-40, -10, 3));
+    this.group.add(mouth);
+    const lane = new THREE.PointLight(0xffa860, 4, 22, 1.5);
+    lane.position.copy(this.world(2, -12, 3));
+    this.group.add(lane);
+    this.panel(new THREE.MeshBasicMaterial({ map: arrowTexture('ENTER →'), toneMapped: false, side: THREE.DoubleSide, color: new THREE.Color(0.85, 0.85, 0.85) }), 5, 1.6, -42, -9.5, 2.6, 0, 1);
+    const post = this.world(-42, -9.7, 0);
+    this.group.add(new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 2.0, 6).translate(post.x, post.y + 1.0, post.z), new THREE.MeshStandardMaterial({ color: 0x2a2b2e })));
+  }
+
   /** The parkway: a hedge each side, dead lamps, one or two still on. No hedge where the lot opens. */
   buildParkway() {
     const sp = this.spur;
@@ -160,7 +205,7 @@ export class DriveThru extends SidePlace {
     const lamps = [];
     for (let t = sp.tSepA + 20; t < sp.tSepB - 20; t += 6) {
       sp.sample(t, P);
-      for (const s of [-1, 1]) if (!(s < 0 && Math.abs(t - this.T0) < 52)) hedge.push(new THREE.BoxGeometry(1.6, 1.4, 6.2).rotateY(-P.heading).translate(P.x + P.nx * s * 7, P.y + 0.7, P.z + P.nz * s * 7));
+      for (const s of [-1, 1]) if (!(s < 0 && t > this.T0 - 64 && t < this.T0 + 16)) hedge.push(new THREE.BoxGeometry(1.6, 1.4, 6.2).rotateY(-P.heading).translate(P.x + P.nx * s * 7, P.y + 0.7, P.z + P.nz * s * 7));
     }
     let k = 0;
     for (let t = sp.tSepA + 30; t < sp.tSepB - 30; t += 34) {
@@ -187,7 +232,8 @@ export class DriveThru extends SidePlace {
 
   /** The lot, the building, the lane round the back, the tall sign out by the road. */
   buildRestaurant() {
-    const lot = new THREE.Mesh(this.box(LOT.a0, LOT.a1, LOT.c0, LOT.c1, 0.1, -0.08), new THREE.MeshStandardMaterial({ color: 0x141416, roughness: 0.55, metalness: 0.1, envMapIntensity: 0.7 }));
+    this.buildApron();
+    const lot = new THREE.Mesh(this.box(RAMP_A, LOT.a1, LOT.c0, LOT.c1, 0.1, -0.08), new THREE.MeshStandardMaterial({ color: 0x141416, roughness: 0.55, metalness: 0.1, envMapIntensity: 0.7 }));
     this.group.add(lot);
     // painted lane arrows and bays
     const paint = [];
@@ -248,7 +294,7 @@ export class DriveThru extends SidePlace {
 
   /** The road's edge holds you in, except where the lot opens onto it (the visible gaps in the hedge). */
   clamp(vehicle, h, dt) {
-    if (h && h.d < 0) for (const [t0, t1] of this.spur.openings) if (h.t > t0 - 6 && h.t < t1 + 6) return;
+    if (h) for (const [t0, t1, sd] of this.spur.openings) if (h.t > t0 - 6 && h.t < t1 + 6 && Math.sign(h.d) === sd) return;
     super.clamp(vehicle, h, dt);
   }
 
