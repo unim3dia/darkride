@@ -96,7 +96,7 @@ export function drawMap(D, size = 2000) {
   D.forks.spurs.forEach((sp, i) => labels.push(pocket(sp, i)));
   for (const det of D.forks.detours) { const m = Math.floor((det.tCaveA + det.tCaveB) / 2); labels.push({ t: det.name, sub: 'cave', col: '#9fd4e4', size: 15, at: [X(det.X[m]), Y(det.Z[m])], d: -1 }); }
   labels.push({ t: 'THE CHARGE', sub: 'the herd', col: '#e8bd80', size: 18, at: [X(D.herdRoad.X[mid(D.herdRoad)]), Y(D.herdRoad.Z[mid(D.herdRoad)])], d: 1 });
-  labels.push({ t: 'THE BLOCK', sub: 'one shot', col: '#ffb07a', size: 15, at: [X(D.hood.spur.X[mid(D.hood.spur)]), Y(D.hood.spur.Z[mid(D.hood.spur)])], d: -1 });
+  labels.push({ t: 'THE BLOCK', sub: 'a game of d-a-r-k', col: '#ffb07a', size: 15, at: [X(D.hood.spur.X[mid(D.hood.spur)]), Y(D.hood.spur.Z[mid(D.hood.spur)])], d: -1 });
   labels.push({ t: 'THE CIRCUIT', sub: 'one long lap', col: '#bfe9ff', size: 17, at: [X(D.race.track.X[mid(D.race.track)]), Y(D.race.track.Z[mid(D.race.track)])], d: 1 });
   for (const pl of D.extras || []) labels.push({ t: pl.name, sub: pl.sub, col: pl.color, size: 15, at: [X(pl.at.x), Y(pl.at.z)], d: pl.d || 1 });
   labels.push({ t: 'THE UNDERPASS', sub: 'start', col: '#e8c9a0', size: 19, at: [X(uo.x), Y(uo.z)], d: -1 });

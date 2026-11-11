@@ -348,7 +348,26 @@ function sidesFrame(dt) {
   if (jo.air && jo.air > 1.4) screens.showCard(`${jo.air.toFixed(1)} s`, 'of air');
 }
 
-const ballCam = (cam, v, dt) => hood.watch(cam, dt);
+/** The court's events, heard and shown. */
+function courtSounds(hev) {
+  for (const n of hev.snd) {
+    if (n === 'pickup') audio.tone(180, 0.12, 0.25, { to: 240, wet: 0.3 });
+    else if (n === 'shot') { audio.tone(140, 0.2, 0.4, { to: 320, wet: 0.5 }); rig.shake(0.12); }
+    else if (n === 'made') [523.25, 659.25, 783.99].forEach((f, i) => audio.tone(f, 0.11, 1.3 + i * 0.3, { wet: 0.75, delay: i * 0.12 }));
+    else if (n === 'rim') audio.tone(260, 0.2, 0.5, { type: 'triangle', to: 200, wet: 0.6 });
+    else if (n === 'miss') audio.tone(196, 0.07, 0.6, { type: 'triangle', to: 150, wet: 0.5 });
+    else if (n === 'kick') { audio.bump(5); audio.tone(90, 0.2, 0.3, { to: 55, wet: 0.4 }); }
+    else if (n === 'drop') audio.tone(880, 0.04, 1.2, { to: 440, wet: 0.9 });
+    else if (n === 'ghostShot') audio.tone(392, 0.05, 1.4, { to: 784, wet: 0.95 });
+    else if (n === 'ghostMade') [392, 493.88, 587.33].forEach((f, i) => audio.tone(f, 0.07, 1.5, { wet: 0.95, delay: i * 0.1 }));
+    else if (n === 'ghostMiss') audio.tone(233, 0.08, 0.8, { type: 'triangle', to: 180, wet: 0.8 });
+    else if (n === 'letter') audio.tone(110, 0.22, 1.2, { to: 82, wet: 0.7 });
+  }
+  if (hev.bounce) { audio.tone(80, 0.3 * hev.bounce, 0.25, { to: 50, wet: 0.4 }); audio.burst('lowpass', 500, 0.12 * hev.bounce, 0.12, 1, 0.4); }
+  if (hev.card) screens.showCard(hev.card[0], hev.card[1]);
+  // beat it and it rides with you
+  if (hev.win) { state.passengers++; carView.setPassengers(state.passengers); emitPulse(vehicle.pos.x, vehicle.pos.z, 1.0, 120); }
+}
 
 /** Into the car wash: the camera flies forward through the back glass and settles in the driver's seat. */
 const washCam = (cam, v, dt) => {
@@ -583,6 +602,7 @@ herdRoadRef = herdRoad;
 // the forgotten block off the Ruins, and its one shot
 const hood = new Hood(scene, rng(7777));
 vehicle.spurs.push(hood.spur);
+vehicle.pads.push(hood.court.pad);
 hoodRef = hood;
 raceRef = { near: (x, z) => { const b = race.track.box; if (x < b.minX - 150 || x > b.maxX + 150 || z < b.minZ - 150 || z > b.maxZ + 150) return false; return race.track.distance(x, z) < 120; } };
 markMouths(hood.spur, 'THE BLOCK', new THREE.Color(2.6, 1.25, 0.35));
@@ -1184,25 +1204,17 @@ function tick(now) {
   const hu = onHood ? onHood.t / hood.spur.N : 0;
   state.hoodW = (state.hoodW || 0) + ((onHood ? Math.min(1, hu * 6, (1 - hu) * 6) : 0) - (state.hoodW || 0)) * Math.min(1, dt * 2);
   if (state.hoodW > 0.01 && !ambient.pocket) ambient.pocket = { weight: state.hoodW, palette: HOOD_PALETTE };
-  if (onHood && onHood.t > hood.spur.tSepA && onHood.t < hood.spur.tSepB && Math.abs(onHood.d) > hoodHalfWidth() - 1.2 && !vehicle.airborne) {
+  if (onHood && onHood.t > hood.spur.tSepA && onHood.t < hood.spur.tSepB && Math.abs(onHood.d) > hoodHalfWidth() - 1.2 && !vehicle.airborne && !hood.court.open(vehicle.pos.x, vehicle.pos.z)) {
     const side = Math.sign(onHood.d);
     const over = Math.abs(onHood.d) - (hoodHalfWidth() - 1.2);
     vehicle.pos.x -= onHood.nx * side * over; vehicle.pos.z -= onHood.nz * side * over;
     const into = (vehicle.vel.x * onHood.nx + vehicle.vel.z * onHood.nz) * side;
     if (into > 0) { vehicle.vel.x -= onHood.nx * side * into; vehicle.vel.z -= onHood.nz * side * into; }
   }
-  if (onHood && hu > 0.15 && !state.hoodShown) { state.hoodShown = true; screens.showCard('THE BLOCK', 'one ball · one shot'); }
+  if (onHood && hu > 0.15 && !state.hoodShown) { state.hoodShown = true; screens.showCard('THE BLOCK', 'there is a court · someone wants a game'); }
   if (!onHood) state.hoodShown = false;
-  const hev = hood.update(dt, state.time, vehicle);
-  if (hev.shot) { audio.bump(12); audio.tone(90, 0.3, 0.5, { to: 50, wet: 0.5 }); rig.shake(0.4); }
-  if (hev.swish) { audio.tone(523.25, 0.12, 1.2, { wet: 0.7 }); audio.tone(659.25, 0.1, 1.4, { wet: 0.7, delay: 0.12 }); audio.tone(783.99, 0.1, 1.8, { wet: 0.8, delay: 0.24 }); screens.showCard('SWISH', 'from downtown'); }
-  if (hev.miss === 'rim') { audio.tone(220, 0.2, 0.6, { type: 'triangle', to: 180, wet: 0.6 }); screens.showCard('OFF THE RIM', 'so close'); }
-  if (hev.miss === 'air') screens.showCard('AIRBALL', 'the block saw that');
-  if (hev.rim) audio.tone(260, 0.22, 0.5, { type: 'triangle', to: 200, wet: 0.6 });
-  if (hev.bounce) { audio.tone(70, 0.4 * hev.bounce, 0.35, { to: 45, wet: 0.5 }); audio.burst('lowpass', 500, 0.15 * hev.bounce, 0.15, 1, 0.4); }
-  // watch the ball: a camera by the hoop until it's down and still (any key-held view comes back after)
-  if (hev.shot && !rig.cine) { hood.camPos = null; hood.camLook = null; rig.cine = ballCam; }
-  if (rig.cine === ballCam && !hood.live) rig.cine = null;
+  const hev = hood.update(dt, state.time, vehicle, ev.launch ? ev.launch.charge : ev.pop ? 0.1 : null);
+  courtSounds(hev);
   sidesFrame(dt);
   audio.stampede(herd.w, herd.near, herd.intensity || 0, herd.score ? herd.score.vortex : 0);
   if (herd.w > 0.5 && !state.herdShown) { state.herdShown = true; screens.showCard('THE CHARGE', 'they were running long before the road'); }
