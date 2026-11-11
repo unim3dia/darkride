@@ -246,6 +246,12 @@ export class DriveThru extends SidePlace {
     }
   }
 
+  /** The road's edge holds you in, except where the lot opens onto it (the visible gaps in the hedge). */
+  clamp(vehicle, h, dt) {
+    if (h && h.d < 0) for (const [t0, t1] of this.spur.openings) if (h.t > t0 - 6 && h.t < t1 + 6) return;
+    super.clamp(vehicle, h, dt);
+  }
+
   /** Keep the car out of the building and the lane's curbs. */
   collide(vehicle) {
     const [a, c] = this.local(vehicle.pos.x, vehicle.pos.z);

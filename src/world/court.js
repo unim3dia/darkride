@@ -89,7 +89,7 @@ export class Court {
   world(a, c, y = 0, out = new THREE.Vector3()) { const O = this.O; return out.set(O.x + O.tx * a + O.nx * c, this.floor + y, O.z + O.tz * a + O.nz * c); }
 
   /** Is this point of the street open onto the lot (so the street's own kerb shouldn't hold the car)? */
-  open(x, z) { const [a, c] = this.local(x, z); return Math.abs(a) < LEN - 1.5 && c < 0; }
+  open(x, z) { const [a, c] = this.local(x, z); return Math.abs(a) < LEN + 4 && c < 3; }
 
   build() {
     const O = this.O;
@@ -113,8 +113,8 @@ export class Court {
       for (let k = 0; k <= len; k += 7) put(new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, FENCE_H, 6), steel), a0 + ((a1 - a0) * k) / len, c0 + ((c1 - c0) * k) / len, FENCE_H / 2);
     };
     fence(-LEN, FAR, LEN, FAR);
-    fence(-LEN, FAR, -LEN, -8);
-    fence(LEN, FAR, LEN, -8);
+    fence(-LEN, FAR, -LEN, -14); // the sides stop short of the street: that gap is the way out
+    fence(LEN, FAR, LEN, -14);
     // the live hoop
     const hoop = (a, dir, alive) => {
       const g = new THREE.Group();
@@ -435,6 +435,9 @@ export class Court {
         break;
       }
     }
+    // a ball that has left the lot is gone after a moment, and a new one drops: nobody has to go fetch it
+    if (Math.abs(a) > LEN || c < FAR || c > NEAR + 3) this.outT = (this.outT || 0) + dt; else this.outT = 0;
+    if (this.outT > 1.5) { this.outT = 0; if (this.shot && this.shot.live && !this.shot.made) { this.shot.live = false; this.resolve(false, this.shot.from, out); } this.mode = 'gone'; this.goneT = 1.2; this.ball.position.y = -500; return; }
     // over the fence or off down the street: that one's gone, another is coming
     if (Math.abs(a) > LEN + 6 || c < FAR - 4 || c > NEAR + 10) {
       if (this.shot && this.shot.live && !this.shot.made) { this.shot.live = false; this.resolve(false, this.shot.from, out); }
@@ -452,7 +455,7 @@ export class Court {
 
   /** The fence holds the car too. */
   contain(vehicle, a, c) {
-    if (Math.abs(a) > LEN + 2 || c > -7) return;
+    if (Math.abs(a) > LEN + 6 || c > -7) return;
     const O = this.O;
     const push = (nx, nz, depth) => {
       vehicle.pos.x += nx * depth; vehicle.pos.z += nz * depth;
